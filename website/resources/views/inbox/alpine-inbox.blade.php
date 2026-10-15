@@ -218,7 +218,7 @@
         </div>
 
         {{-- Conversation cards --}}
-        <div class="flex-1 overflow-y-auto hide-scroll p-4 space-y-1.5" @scroll.debounce.200ms="if($el.scrollTop+$el.clientHeight>=$el.scrollHeight-100)loadMore()">
+        <div class="flex-1 overflow-y-auto p-1 space-y-0.5" @scroll.debounce.200ms="if($el.scrollTop+$el.clientHeight>=$el.scrollHeight-100)loadMore()">
             <template x-if="conversations.length===0&&!loading">
                 <div class="flex flex-col items-center justify-center py-16 text-center">
                     <div class="w-16 h-16 rounded-2xl bg-white/[0.03] border border-white/[0.05] flex items-center justify-center mb-4"><x-icon name="inbox" class="w-7 h-7 text-gray-600" /></div>
@@ -233,7 +233,7 @@
                      to the message count in the meta row below — only
                      for non-normal priorities. --}}
                 <div @click="selectConversation(conv.id)"
-                     class="relative p-3.5 rounded-xl transition cursor-pointer bg-white/[0.02]"
+                     class="relative px-3 py-2 rounded-lg transition cursor-pointer bg-white/[0.02]"
                      :class="
                         activeId===conv.id
                           ? '!bg-[#3b82f6] text-white shadow-lg'
@@ -243,6 +243,7 @@
                          only), and channel icon — all live in the same
                          corner so the meta row below stays clean. --}}
                     <div class="absolute top-2 right-2 z-20 flex items-center gap-1.5">
+                        <span class="text-[10px]" :class="activeId===conv.id?'text-white/90':'text-gray-500'" x-text="conv.time"></span>
                         <template x-if="conv.is_starred">
                             <svg class="w-3.5 h-3.5 text-yellow-400" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M11.48 3.5l2.31 4.68 5.16.75-3.73 3.64.88 5.13L11.48 15.27l-4.62 2.43.88-5.13L4.01 8.93l5.16-.75 2.31-4.68z"/></svg>
                         </template>
@@ -265,8 +266,8 @@
                             <button @click.stop="toggleSelect(conv.id)" :class="selectedIds.includes(conv.id)?'bg-[#3b82f6] border-blue-500 text-white opacity-100':'border-[#2d3039] bg-[#1a1d27] opacity-0 hover:opacity-100'" class="absolute -left-0.5 -top-0.5 w-5 h-5 rounded border flex items-center justify-center transition-all z-10">
                                 <template x-if="selectedIds.includes(conv.id)"><x-icon name="check" class="w-3 h-3" /></template>
                             </button>
-                            <div class="w-11 h-11 rounded border border-white/10 shrink-0 flex items-center justify-center text-xs font-bold"
-                                 :class="activeId===conv.id?'bg-white/20 text-white border-white/20':avatarColor(conv.id)"
+                            <div class="w-9 h-9 rounded-full border border-white/10 shrink-0 flex items-center justify-center text-lg font-bold"
+                                 :class="avatarColor(conv.id)"
                                  x-text="conv.contact_initials"></div>
                         </div>
                         <div class="overflow-hidden flex-1 min-w-0">
@@ -275,7 +276,7 @@
                                  read so the row visually fades to match
                                  the inbox background once the user has
                                  opened it. --}}
-                            <h4 class="text-[13px] truncate"
+                            <h4 class="text-[13px] truncate pr-16"
                                 :class="
                                     activeId===conv.id
                                       ? 'font-bold text-white'
@@ -290,7 +291,7 @@
                                       : (conv.is_unread ? 'text-gray-200 font-medium' : 'text-gray-500/80 font-normal')
                                "
                                x-text="conv.subject"></p>
-                            <p class="text-[11px] mt-0.5 leading-snug line-clamp-2"
+                            <p class="text-xs mt-0.5 leading-snug truncate"
                                :class="
                                     activeId===conv.id
                                       ? 'text-white/80'
@@ -299,9 +300,9 @@
                                x-text="conv.preview"></p>
                         </div>
                     </div>
-                    <div class="mt-3 flex items-center justify-between">
+                    <div x-show="conv.messages_count>1 || (conv.tags||[]).length || conv.assigned_to_initials" class="mt-1 flex items-center justify-between">
                         <div class="flex items-center gap-2" :class="activeId===conv.id?'text-white/70':'text-gray-500/80'">
-                            <span class="text-[11px] font-semibold tracking-wide" x-text="conv.time"></span>
+
                             <template x-if="conv.messages_count>1"><span class="text-[11px] font-medium flex items-center gap-1"><x-icon name="message-circle" class="w-[13px] h-[13px] stroke-[2.5]" /><span x-text="conv.messages_count"></span></span></template>
                         </div>
                         <div class="flex items-center gap-1">
@@ -402,7 +403,7 @@
                         </div>
 
                         {{-- Messages --}}
-                        <div class="flex-1 min-h-0 overflow-y-auto hide-scroll" x-ref="messagesContainer">
+                        <div class="flex-1 min-h-0 overflow-y-auto" style="scrollbar-gutter:stable" x-ref="messagesContainer">
                             <div class="px-6 pt-4 pb-6">
                                 {{-- Subject + AI Assistant button --}}
                                 <div class="flex items-start justify-between gap-3 mb-6">
@@ -461,8 +462,8 @@
                                             </template>
 
                                             {{-- Message bubble --}}
-                                            <div x-show="msg.type !== 'note'" :class="msg.direction==='outbound'?'flex flex-row-reverse gap-3 max-w-[85%] ml-auto':'flex gap-3 max-w-[92%]'">
-                                                <div class="w-8 h-8 rounded-full flex items-center justify-center text-xs font-semibold shrink-0 mt-0.5" :class="msg.direction==='outbound'?'bg-[#3b82f6]/15 text-[#3b82f6]':'bg-white/10 text-gray-300'" x-text="msg.sender_initials"></div>
+                                            <div x-show="msg.type !== 'note'" :class="activeConversation.channel==='email' ? 'flex gap-3 w-full border-b border-[#2d3039] pb-5' : (msg.direction==='outbound'?'flex flex-row-reverse gap-3 max-w-[85%] ml-auto':'flex gap-3 max-w-[92%]')">
+                                                <div class="mail-avatar-initial w-10 h-10 rounded-full flex items-center justify-center text-lg font-semibold shrink-0 mt-0.5" x-text="msg.sender_initials"></div>
                                                 <div class="min-w-0 flex-1">
                                                     <div class="flex items-center gap-2 mb-1" :class="msg.direction==='outbound'?'justify-end':''">
                                                         <span class="text-sm font-semibold text-gray-200" x-text="msg.sender_name"></span>
@@ -474,10 +475,10 @@
                                                         <template x-if="msg.to_emails&&msg.to_emails.length"><span>To: <span class="text-gray-400" x-text="msg.to_emails.join(', ')"></span></span></template>
                                                         <span x-text="msg.date"></span>
                                                     </div>
-                                                    <div :class="msg.direction==='outbound'?'rounded-xl rounded-tr-sm border border-[#3b82f6]/20 overflow-hidden bg-[#0f1117]':'rounded-xl rounded-tl-sm border border-[#2d3039] overflow-hidden bg-[#0f1117]'"
+                                                    <div :class="activeConversation.channel==='email' ? 'rounded-lg overflow-hidden bg-[#0f1117]' : (msg.direction==='outbound'?'rounded-xl rounded-tr-sm border border-[#3b82f6]/20 overflow-hidden bg-[#0f1117]':'rounded-xl rounded-tl-sm border border-[#2d3039] overflow-hidden bg-[#0f1117]')"
                                                         >
                                                          <template x-if="msg.has_html">
-                                                            <div x-data="{loaded:false}" x-init="window.renderEmail($el, msg.id, ()=>{loaded=true})" class="email-shadow-host rounded-lg overflow-hidden">
+                                                            <div x-data="{loaded:false}" x-init="window.renderEmail($el, msg.id, ()=>{loaded=true})" class="email-shadow-host rounded-lg overflow-auto">
                                                                 <div x-show="!loaded" class="px-4 py-3 text-sm text-gray-300 whitespace-pre-wrap" x-text="msg.body_text"></div>
                                                             </div>
                                                         </template>
@@ -546,9 +547,11 @@
                             </div>
                         </div>
 
-                        {{-- Keep the composer visible so replying never requires finding a tiny toggle. --}}
                         <section aria-label="{{ __('Reply') }}" class="shrink-0 border-t border-[#2d3039] max-h-[45vh] overflow-y-auto">
-                            <livewire:inbox.reply-composer />
+                            <button type="button" @click="composerOpen = !composerOpen" :aria-expanded="composerOpen" aria-controls="email-reply-composer" class="m-3 inline-flex items-center justify-center rounded-full bg-blue-600 px-6 py-2.5 text-sm font-semibold text-white hover:bg-blue-500 focus-visible:ring-2 focus-visible:ring-blue-300" x-text="composerOpen ? 'Hide reply' : 'Reply'"></button>
+                            <div id="email-reply-composer" x-show="composerOpen" x-cloak>
+                                <livewire:inbox.reply-composer />
+                            </div>
                         </section>
                     </div>
 
@@ -1087,7 +1090,7 @@ window.renderEmail = function(el, msgId, onDone) {
     function render(html) {
         var shadow = el.attachShadow ? el.attachShadow({mode:'open'}) : el;
         var hasStyle = html.includes('<style') || html.includes('style=');
-        var css = hasStyle ? '' : fallbackCSS;
+        var css = (hasStyle ? '' : fallbackCSS) + '<style>:host{display:block;max-width:100%;overflow:auto}img,video{max-width:100%!important;height:auto!important}table{max-width:100%!important}pre{white-space:pre-wrap;overflow-wrap:anywhere}</style>';
         shadow.innerHTML = css + '<div style="' + wrapStyle + '">' + html + '</div>';
         window.emailCache[msgId] = html;
         if (onDone) onDone();
@@ -1106,7 +1109,7 @@ window.renderEmail = function(el, msgId, onDone) {
 function inboxApp() {
     const csrf = document.querySelector('meta[name=csrf-token]')?.content || '';
     const baseUrl = '{{ url("") }}';
-    const avatarColors = ['bg-pink-500/20 text-pink-400','bg-blue-500/20 text-blue-400','bg-emerald-500/20 text-emerald-400','bg-amber-500/20 text-amber-400','bg-violet-500/20 text-violet-400','bg-rose-500/20 text-rose-400','bg-cyan-500/20 text-cyan-400','bg-indigo-500/20 text-indigo-400'];
+    const avatarColors = ['mail-avatar-initial'];
     const headers = {'Accept':'application/json','X-Requested-With':'XMLHttpRequest','X-CSRF-TOKEN':csrf};
     window.emailCache = window.emailCache || {};
 
@@ -1114,7 +1117,7 @@ function inboxApp() {
         conversations:[], activeId:null, activeConversation:null, activeMessages:[],
         page:1, hasMore:false, loading:false, loadingMessages:false,
         hasMoreMessages:false, loadingMoreMessages:false, msgOffset:0, totalMessages:0,
-        composing:false, showQuickReplies:false, searchOpen:false, search:'',
+        composerOpen:false, composing:false, showQuickReplies:false, searchOpen:false, search:'',
         folder:'inbox', channel:'all', sortBy:'newest',
         filterTag:'', filterAssignee:null, filterAccountId:null,
         selectedIds:[], selectAll:false,
@@ -1366,6 +1369,7 @@ function inboxApp() {
         loadMore() { if(!this.hasMore||this.loading) return; this.page++; this.loadConversations(true); },
 
         async selectConversation(id) {
+            this.composerOpen = false;
             if(this.activeId===id) return;
             this.activeId = id;
             // Expose as a window-level fallback so the Livewire ReplyComposer

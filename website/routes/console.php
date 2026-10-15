@@ -54,7 +54,7 @@ Schedule::command('queue:work --stop-when-empty --max-time=45 --tries=3 --queue=
 
 // ── Email sync — every minute ──
 Schedule::command('mailtrixy:sync-emails')
-    ->everyMinute()
+    ->everyThirtySeconds()
     ->withoutOverlapping()
     ->runInBackground()
     ->before(fn () => Log::info('[Scheduler] sync-emails — STARTED'))
@@ -167,3 +167,12 @@ Schedule::call(fn () => app(\App\Services\Friends\FriendCallService::class)->swe
 Schedule::call(fn () => app(\App\Services\Recording\RecordingService::class)->sweep())->name('recording-sweep')->everyMinute()->withoutOverlapping();
 
 Schedule::call(fn () => Log::info('[Scheduler] heartbeat — OK | jobs: ' . DB::table('jobs')->count()))->everyFiveMinutes();
+
+Schedule::call(function () {
+    if (!\Illuminate\Support\Facades\Schema::hasTable('admin_broadcast_deliveries')) return;
+    \Illuminate\Support\Facades\DB::table('admin_broadcast_deliveries')
+        ->where(fn ($q) => $q->where('push_status', 'pending')->orWhere('email_status', 'pending'))
+        ->orderBy('id')->chunkById(500, function ($rows) {
+            foreach ($rows as $row) \App\Jobs\DeliverAdminBroadcast::dispatch($row->id);
+        });
+})->name('admin-broadcast-dispatch')->everyMinute()->withoutOverlapping();

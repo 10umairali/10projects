@@ -1,13 +1,14 @@
 <x-layouts.app :title="__('Call history')">
     @php($calls = app(\App\Services\Friends\FriendCallService::class)->history(auth()->user()))
+    @php($calls = request('user_id') ? array_values(array_filter($calls, fn ($call) => $call['peer']['id'] === (int) request('user_id'))) : $calls)
     <div class="max-w-3xl mx-auto space-y-4">
         <a href="{{ url('/people') }}" class="text-sm text-muted hover:text-ink">&larr; {{ __('Friends') }}</a>
         <div class="flex items-center justify-between"><h1 class="text-xl font-semibold text-ink">{{ __('Call history') }}</h1>
-            @if(count($calls))<button type="button" class="text-sm text-red-600 hover:underline" onclick="if (confirm(@js(__('Clear your call history?')))) fetch('/friends/api/calls/history', { method: 'DELETE', credentials: 'same-origin', headers: { 'Accept': 'application/json', 'X-CSRF-TOKEN': document.querySelector('meta[name=csrf-token]').content } }).then(function () { location.reload(); })">{{ __('Clear') }}</button>@endif</div>
+            @if(count($calls) && !request("user_id"))<button type="button" class="text-sm text-red-600 hover:underline" onclick="if (confirm(@js(__('Clear your call history?')))) fetch('/friends/api/calls/history', { method: 'DELETE', credentials: 'same-origin', headers: { 'Accept': 'application/json', 'X-CSRF-TOKEN': document.querySelector('meta[name=csrf-token]').content } }).then(function () { location.reload(); })">{{ __('Clear') }}</button>@endif</div>
         <div class="bg-surface-2 rounded-2xl border border-border divide-y divide-border">
             @forelse($calls as $c)
                 <div class="flex items-center gap-3 p-4">
-                    <div class="w-10 h-10 rounded-full bg-brand/10 text-brand flex items-center justify-center font-semibold overflow-hidden flex-shrink-0">
+                    <div class="w-10 h-10 rounded-full profile-initial flex items-center justify-center font-semibold overflow-hidden flex-shrink-0">
                         @if($c['peer']['avatar_url'])<img src="{{ $c['peer']['avatar_url'] }}" alt="" class="w-full h-full object-cover">@else{{ strtoupper(mb_substr($c['peer']['name'], 0, 1)) }}@endif
                     </div>
                     <div class="min-w-0 flex-1">

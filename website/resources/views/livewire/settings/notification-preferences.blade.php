@@ -83,6 +83,11 @@
                 <tbody class="divide-y divide-border/60">
                     @php
                     $eventLabels = [
+                        'announcement_general' => ['label' => __('General announcements'), 'desc' => __('Updates from the app administrator')],
+                        'announcement_system' => ['label' => __('System announcements'), 'desc' => __('Updates from the app administrator')],
+                        'announcement_marketing' => ['label' => __('Marketing announcements'), 'desc' => __('Updates from the app administrator')],
+                        'announcement_advertising' => ['label' => __('Advertising announcements'), 'desc' => __('Updates from the app administrator')],
+                        'announcement_misc' => ['label' => __('Misc announcements'), 'desc' => __('Updates from the app administrator')],
                         'newConversation' => ['label' => __('New conversation'), 'desc' => __('When a new email or message arrives')],
                         'assignment' => ['label' => __('Assignment'), 'desc' => __('When a conversation is assigned to you')],
                         'aiDraftReady' => ['label' => __('AI draft ready'), 'desc' => __('When an AI draft is ready for review')],

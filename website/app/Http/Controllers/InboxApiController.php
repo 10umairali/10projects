@@ -110,7 +110,8 @@ class InboxApiController extends Controller
                     ->orWhere('preview', 'like', $term)
                     ->orWhereHas('contact', fn ($cq) => $cq->where('first_name', 'like', $term)
                         ->orWhere('last_name', 'like', $term)
-                        ->orWhere('email', 'like', $term));
+                        ->orWhere('email', 'like', $term))
+                    ->orWhereHas('messages', fn ($mq) => $mq->where('direction', 'inbound')->where(fn ($sender) => $sender->where('from_name', 'like', $term)->orWhere('from_email', 'like', $term)));
             });
         }
 
@@ -131,7 +132,10 @@ class InboxApiController extends Controller
         $hasMore = $conversations->count() > $perPage;
         $conversations = $conversations->take($perPage);
 
-        $data = $conversations->map(function (Conversation $c) use ($folder) {
+        $mutedIds = \Illuminate\Support\Facades\Schema::hasTable('email_notification_mutes')
+            ? \Illuminate\Support\Facades\DB::table('email_notification_mutes')->where('user_id', auth()->id())->whereIn('conversation_id', $conversations->pluck('id'))->pluck('conversation_id')->all()
+            : [];
+        $data = $conversations->map(function (Conversation $c) use ($folder, $mutedIds) {
             // Resolve the display name with a sensible fallback chain:
             //   1. The contact's full_name (if non-empty)
             //   2. The latest inbound message's From: name
@@ -171,6 +175,7 @@ class InboxApiController extends Controller
             'priority' => $c->priority,
             'is_unread' => !$c->is_read,
             'is_starred' => $c->is_starred,
+            'is_muted' => in_array($c->id, $mutedIds),
             'status' => $c->status,
             'messages_count' => $c->messages_count,
             'assigned_to_initials' => $c->assignedTo?->initials,
@@ -272,10 +277,10 @@ class InboxApiController extends Controller
                 // that's only visible to the team.
                 'type' => $m->type,
                 'sender_name' => $m->direction === 'inbound'
-                    ? ($m->from_name ?? $m->from_email ?? 'Unknown')
+                    ? ($m->from_name ?: $m->from_email ?: 'Unknown sender')
                     : ($m->sender?->name ?? 'You'),
                 'sender_initials' => $m->direction === 'inbound'
-                    ? strtoupper(substr($m->from_name ?? '?', 0, 1) . substr(strstr($m->from_name ?? '', ' ') ?: '', 1, 1))
+                    ? mb_strtoupper(mb_substr(trim($m->from_name ?: $m->from_email ?: '?'), 0, 1))
                     : ($m->sender?->initials ?? 'Me'),
                 'from_email' => $m->from_email,
                 'from_name' => $m->from_name,
@@ -463,7 +468,7 @@ class InboxApiController extends Controller
         $lastId = (int) $request->get('last_id', 0);
 
         $stats = Conversation::where('workspace_id', $workspaceId)
-            ->selectRaw('COUNT(*) as total, MAX(id) as latest_id, MAX(updated_at) as latest_update, SUM(CASE WHEN is_read = 0 THEN 1 ELSE 0 END) as unread')
+            ->selectRaw('COUNT(*) as total, MAX(id) as latest_id, MAX(updated_at) as latest_update, SUM(messages_count) as message_count, SUM(CASE WHEN is_read = 0 THEN 1 ELSE 0 END) as unread')
             ->first();
 
         $latestId = $stats->latest_id ?? 0;
@@ -473,6 +478,7 @@ class InboxApiController extends Controller
             'total' => $total,
             'unread' => $stats->unread ?? 0,
             'latest_id' => $latestId,
+            'revision' => ($stats->latest_update ?? '').':'.($stats->message_count ?? 0),
             'has_new' => ($lastId > 0 && $latestId > $lastId) || ($lastId === 0 && $total > 0),
         ]);
     }
@@ -855,8 +861,9 @@ class InboxApiController extends Controller
     public function bulk(Request $request): JsonResponse
     {
         $workspaceId = auth()->user()->active_workspace_id;
-        $ids = $request->input('ids', []);
-        $action = $request->input('action');
+        $validated = $request->validate(['ids' => 'required|array|min:1|max:100', 'ids.*' => 'required|integer|min:1', 'action' => 'required|in:mark_read,star,unstar,archive,unarchive,delete,force_delete,mute,unmute']);
+        $ids = array_values(array_unique($validated['ids']));
+        $action = $validated['action'];
 
         // For purge-from-trash (force_delete) we MUST include soft-deleted
         // rows in the base query — otherwise withTrashed-aware actions
@@ -870,9 +877,24 @@ class InboxApiController extends Controller
             ->where('workspace_id', $workspaceId)
             ->whereIn('id', $ids);
 
+        if (in_array($action, ['mute', 'unmute'], true)) {
+            $allowed = (clone $query)->where('channel', 'email')->pluck('id')->all();
+            abort_unless(count($allowed) === count($ids), 403);
+            if ($action === 'mute') {
+                \Illuminate\Support\Facades\DB::table('email_notification_mutes')->insertOrIgnore(array_map(fn ($id) => [
+                    'user_id' => auth()->id(), 'conversation_id' => $id,
+                ], $allowed));
+            } else {
+                \Illuminate\Support\Facades\DB::table('email_notification_mutes')->where('user_id', auth()->id())->whereIn('conversation_id', $allowed)->delete();
+            }
+            return response()->json(['ok' => true, 'affected' => count($allowed)]);
+        }
+
         match ($action) {
+            'unarchive' => $query->update(['status' => 'open']),
             'mark_read' => $query->update(['is_read' => true]),
             'star' => $query->update(['is_starred' => true]),
+            'unstar' => $query->update(['is_starred' => false]),
             'archive' => $query->update(['status' => 'closed']),
             // Soft-delete: live rows go to Bin (sets deleted_at).
             'delete' => $query->delete(),
@@ -915,7 +937,7 @@ class InboxApiController extends Controller
         if (!$workspaceId) return response()->json(['error' => 'No workspace'], 400);
 
         $accounts = EmailAccount::where('workspace_id', $workspaceId)
-            ->where('status', 'connected')
+            ->whereIn('status', ['connected', 'error'])
             ->get();
 
         if ($accounts->isEmpty()) {

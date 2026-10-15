@@ -476,10 +476,10 @@ class NativePushReceiverTest {
 
     @Test fun messageHasBrandCategorySenderAndInlineReply() {
         val data = mapOf("notification_id" to "msg-1", "type" to "chat", "title" to "New message", "sender_name" to "Alice Example",
-            "body" to "Hello there", "category_label" to "Chat", "reply_kind" to "friend", "reply_id" to "2", "recipient_user_id" to "1")
+            "body" to "Hello there", "category_label" to "Chat", "reply_kind" to "friend", "reply_id" to "2", "recipient_user_id" to "1", "message_id" to "42")
         assertTrue(NativePushReceiver.showAlert(context, data))
         val alert = manager.activeNotifications.single().notification
-        assertEquals(R.drawable.ic_stat_notify, alert.smallIcon.resId)
+        assertEquals(R.drawable.ic_notify_chat, alert.smallIcon.resId)
         assertNotNull(alert.getLargeIcon())
         assertEquals("Chat", alert.extras.getCharSequence(Notification.EXTRA_SUB_TEXT).toString())
         assertEquals("Alice Example", alert.extras.getCharSequence(Notification.EXTRA_TITLE).toString())
@@ -489,6 +489,8 @@ class NativePushReceiverTest {
         assertEquals("notification_reply", shadowOf(reply.actionIntent).savedIntent.getStringExtra("actionId"))
         assertEquals("com.dexterous.flutterlocalnotifications.ActionBroadcastReceiver", shadowOf(reply.actionIntent).savedIntent.component?.className)
         assertTrue(alert.actions.any { it.title == "View" })
+        val read = alert.actions.single { it.title == "Mark as read" }
+        assertEquals("notification_read", shadowOf(read.actionIntent).savedIntent.getStringExtra("actionId"))
         assertEquals(NotificationCompat.CATEGORY_MESSAGE, alert.category)
     }
 
@@ -547,36 +549,15 @@ class NativePushReceiverTest {
         assertEquals(4, NativePushReceiver.diagnostics(context)["channel_importance"])
     }
 
-    @Test fun bannerRendersSenderThenCategoryAndContentWithTimeAboveAvatar() {
+    @Test fun bannerUsesStandardExpandableLayoutWithSenderCategoryAndAvatar() {
         NativePushReceiver.showAlert(context, mapOf("notification_id" to "friend-1", "type" to "friend_request",
             "title" to "New request", "sender_name" to "Alice Example", "body" to "Open Friends"))
         val notification = manager.activeNotifications.single().notification
-        val view = notification.contentView.apply(context, android.widget.FrameLayout(context))
-        assertEquals("Friend request", view.findViewById<TextView>(R.id.notification_category).text.toString())
-        assertEquals("Alice Example", view.findViewById<TextView>(R.id.notification_sender).text.toString())
-        assertEquals("Sent you a friend request", view.findViewById<TextView>(R.id.notification_body).text.toString())
-        assertNotNull(view.findViewById<android.widget.ImageView>(R.id.notification_brand).drawable)
-        assertNotNull(view.findViewById<android.widget.ImageView>(R.id.notification_type_icon).drawable)
-        assertTrue(view.findViewById<TextView>(R.id.notification_time).text.isNotBlank())
-        view.measure(View.MeasureSpec.makeMeasureSpec(400, View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(200, View.MeasureSpec.AT_MOST))
-        view.layout(0, 0, view.measuredWidth, view.measuredHeight)
-        // RemoteViews are measured off-window; sum local layout coordinates.
-        fun position(id: Int): IntArray {
-            val point = intArrayOf(0, 0)
-            var child: View? = view.findViewById(id)
-            while (child != null) {
-                point[0] += child.left; point[1] += child.top
-                child = child.parent as? View
-            }
-            return point
-        }
-        assertTrue(position(R.id.notification_brand)[0] < position(R.id.notification_sender)[0])
-        assertTrue(position(R.id.notification_sender)[1] < position(R.id.notification_category)[1])
-        assertTrue(position(R.id.notification_time)[1] < position(R.id.notification_avatar)[1])
-        assertTrue(position(R.id.notification_avatar)[0] > position(R.id.notification_sender)[0])
-        assertNotNull(view.findViewById<android.widget.ImageView>(R.id.notification_avatar).drawable)
-        assertNotNull(notification.headsUpContentView)
-        assertNotNull(notification.bigContentView)
+        assertEquals("Friend request", notification.extras.getCharSequence(Notification.EXTRA_SUB_TEXT).toString())
+        assertEquals("Alice Example", notification.extras.getCharSequence(Notification.EXTRA_TITLE).toString())
+        assertEquals("Sent you a friend request", notification.extras.getCharSequence(Notification.EXTRA_BIG_TEXT).toString())
+        assertNotNull(notification.getLargeIcon())
+        assertTrue(notification.`when` > 0)
         assertEquals(listOf("View"), notification.actions.map { it.title })
     }
 

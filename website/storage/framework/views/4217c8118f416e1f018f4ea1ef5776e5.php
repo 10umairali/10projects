@@ -107,6 +107,7 @@
     <?php endif; ?><?php if(\Livewire\Mechanisms\ExtendBlade\ExtendBlade::isRenderingLivewireComponent()): ?><!--[if ENDBLOCK]><![endif]--><?php endif; ?>
     <?php echo \App\Models\SystemSetting::get('head_code', ''); ?>
 
+<style>.profile-initial,.mail-avatar-initial{background:#dbeafe!important;color:#1e3a8a!important;font-weight:700!important;font-size:18px!important}</style>
 </head>
 <body class="h-full overflow-hidden font-sans text-ink bg-surface antialiased">
 <noscript>
@@ -226,7 +227,7 @@ unset($__split);
             <?php
             $navItems = [
                 ['label' => __('Dashboard'), 'href' => url('/dashboard'), 'icon' => '<rect x="3" y="3" width="7" height="7" rx="1.5"></rect><rect x="14" y="3" width="7" height="7" rx="1.5"></rect><rect x="3" y="14" width="7" height="7" rx="1.5"></rect><rect x="14" y="14" width="7" height="7" rx="1.5"></rect>'],
-                ['label' => __('Friends'), 'href' => url('/people'), 'icon' => '<path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path>'],
+                ['label' => __('Friends'), 'pages' => [['label' => __('Chats'), 'href' => url('/friends')], ['label' => __('Friends'), 'href' => url('/people')]], 'href' => url('/people'), 'icon' => '<path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path>'],
                 ['label' => __('Meetings'), 'href' => url('/meetings'), 'icon' => '<rect x="3" y="4" width="18" height="18" rx="2"></rect><path d="M16 2v4M8 2v4M3 10h18M8 14h3M8 17h6"></path>'],
                 ['label' => __('Inbox'), 'href' => url('/inbox'), 'icon' => '<polyline points="22 12 16 12 14 15 10 15 8 12 2 12"></polyline><path d="M5.45 5.11L2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"></path>'],
                 ['label' => __('Contacts'), 'href' => url('/contacts'), 'icon' => '<circle cx="9" cy="8" r="3"></circle><path d="M3 19c1.8-3 4.8-4.5 6-4.5s4.2 1.5 6 4.5"></path><path d="M15.5 11a3 3 0 1 0 0-6"></path><path d="M18 19c.6-1.1 1.6-2.2 3-3"></path>'],
@@ -248,6 +249,21 @@ unset($__split);
                 <?php if(\Livewire\Mechanisms\ExtendBlade\ExtendBlade::isRenderingLivewireComponent()): ?><!--[if BLOCK]><![endif]--><?php \Livewire\Features\SupportCompiledWireKeys\SupportCompiledWireKeys::openLoop(); ?><?php endif; ?><?php $__currentLoopData = $navItems; $__env->addLoop($__currentLoopData); foreach($__currentLoopData as $item): $__env->incrementLoopIndices(); $loop = $__env->getLastLoop(); ?><?php if(\Livewire\Mechanisms\ExtendBlade\ExtendBlade::isRenderingLivewireComponent()): ?><?php \Livewire\Features\SupportCompiledWireKeys\SupportCompiledWireKeys::startLoop($loop->index); ?><?php endif; ?>
                     <?php if(\Livewire\Mechanisms\ExtendBlade\ExtendBlade::isRenderingLivewireComponent()): ?><!--[if BLOCK]><![endif]--><?php endif; ?><?php if(isset($item['section'])): ?>
                         <li class="menu-title mt-2.5" x-show="!sidebarCollapsed"><span><?php echo e($item['section']); ?></span></li>
+                    <?php elseif(isset($item['pages'])): ?>
+                        <li>
+                            <details <?php if(request()->is('friends', 'friends/*', 'people', 'people/*')): ?> open <?php endif; ?>>
+                                <summary class="nav-item" aria-label="<?php echo e(__('Friends menu')); ?>">
+                                    <svg viewBox="0 0 24 24" class="h-[18px] w-[18px] shrink-0" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><?php echo \App\Helpers\SvgSanitizer::sanitize($item['icon']); ?></svg>
+                                    <span><?php echo e($item['label']); ?></span>
+                                </summary>
+                                <ul>
+                                    <?php if(\Livewire\Mechanisms\ExtendBlade\ExtendBlade::isRenderingLivewireComponent()): ?><!--[if BLOCK]><![endif]--><?php \Livewire\Features\SupportCompiledWireKeys\SupportCompiledWireKeys::openLoop(); ?><?php endif; ?><?php $__currentLoopData = $item['pages']; $__env->addLoop($__currentLoopData); foreach($__currentLoopData as $page): $__env->incrementLoopIndices(); $loop = $__env->getLastLoop(); ?><?php if(\Livewire\Mechanisms\ExtendBlade\ExtendBlade::isRenderingLivewireComponent()): ?><?php \Livewire\Features\SupportCompiledWireKeys\SupportCompiledWireKeys::startLoop($loop->index); ?><?php endif; ?>
+                                        <?php $pagePath = parse_url($page['href'], PHP_URL_PATH); ?>
+                                        <li><a href="<?php echo e($page['href']); ?>" wire:navigate class="nav-item" :class="(currentPath === '<?php echo e($pagePath); ?>' || currentPath.startsWith('<?php echo e($pagePath); ?>/')) ? 'nav-item-active' : ''"><?php echo e($page['label']); ?></a></li>
+                                    <?php if(\Livewire\Mechanisms\ExtendBlade\ExtendBlade::isRenderingLivewireComponent()): ?><?php \Livewire\Features\SupportCompiledWireKeys\SupportCompiledWireKeys::endLoop(); ?><?php endif; ?><?php endforeach; $__env->popLoop(); $loop = $__env->getLastLoop(); ?><?php if(\Livewire\Mechanisms\ExtendBlade\ExtendBlade::isRenderingLivewireComponent()): ?><!--[if ENDBLOCK]><![endif]--><?php \Livewire\Features\SupportCompiledWireKeys\SupportCompiledWireKeys::closeLoop(); ?><?php endif; ?>
+                                </ul>
+                            </details>
+                        </li>
                     <?php else: ?>
                         <li>
                             <a href="<?php echo e($item['href']); ?>" wire:navigate.hover
@@ -543,6 +559,7 @@ unset($__split);
                                 } catch (e) {}
                             },
                             openNotification(n) {
+                                if (window.DahiMessages?.target(n)) { window.DahiMessages.view(n); return; }
                                 if (n.action_url) {
                                     window.location.href = '<?php echo e(url('/notifications')); ?>/' + n.id + '/open';
                                 } else {
@@ -566,7 +583,7 @@ unset($__split);
                                     const known = new Set(this.notifications.map(n => n.id));
                                     if (this.loaded) for (const n of (j.notifications || [])) {
                                         if (!n.read && !known.has(n.id) && ['friend_request', 'friend_accepted', 'email_received', 'email_failed', 'email_bounced'].includes(n.type)) {
-                                            window.dispatchEvent(new CustomEvent('toast', {detail: {type: 'info', message: n.title}}));
+                                            if (!window.DahiMessages?.show(n)) window.dispatchEvent(new CustomEvent('toast', {detail: {type: 'info', message: n.title}}));
                                         }
                                     }
                                     this.notifications = j.notifications || [];
@@ -686,6 +703,8 @@ unset($__split);
         </header>
 
         
+        <link rel="stylesheet" href="<?php echo e(asset('css/message-notifications.css')); ?>?v=20261015">
+        <script src="<?php echo e(asset('js/message-notifications.js')); ?>?v=20261015"></script>
         <?php if (isset($component)) { $__componentOriginalbcd757c7bb20b76cf9bcd607adaf8c39 = $component; } ?>
 <?php if (isset($attributes)) { $__attributesOriginalbcd757c7bb20b76cf9bcd607adaf8c39 = $attributes; } ?>
 <?php $component = Illuminate\View\AnonymousComponent::resolve(['view' => 'components.toast-container','data' => []] + (isset($attributes) && $attributes instanceof Illuminate\View\ComponentAttributeBag ? $attributes->all() : [])); ?>

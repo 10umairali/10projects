@@ -228,9 +228,12 @@ class _MeetingsPageState extends State<MeetingsPage> {
 }
 
 /// Schedule a meeting: title, day, time, length, options, and who to invite (friends and teammates).
+Future<bool?> scheduleMeetingWith(BuildContext context, int userId) => Navigator.of(context).push<bool>(MaterialPageRoute(fullscreenDialog: true, builder: (_) => _ScheduleMeetingPage(inviteeId: userId)));
+
 class _ScheduleMeetingPage extends StatefulWidget {
   final Map<String, dynamic>? existing; // set = edit / reschedule this meeting
-  const _ScheduleMeetingPage({this.existing});
+  final int? inviteeId;
+  const _ScheduleMeetingPage({this.existing, this.inviteeId});
   @override
   State<_ScheduleMeetingPage> createState() => _ScheduleMeetingPageState();
 }
@@ -247,6 +250,7 @@ class _ScheduleMeetingPageState extends State<_ScheduleMeetingPage> {
   void initState() {
     super.initState();
     _date = DateTime(_date.year, _date.month, _date.day, _date.hour, 0);
+    if (widget.inviteeId != null) _invited.add(widget.inviteeId!);
     final x = widget.existing;
     if (x != null) {
       _title.text = '${x['title'] ?? ''}';

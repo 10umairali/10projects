@@ -403,7 +403,11 @@ class FriendChatService
             ->where(fn ($v) => $v->whereNull('visible_to')->orWhere('visible_to', $me->id))
             // Relationship notices stay in history without moving the conversation.
             ->selectRaw("CASE WHEN sender_id = ? THEN recipient_id ELSE sender_id END AS partner, COALESCE(MAX(CASE WHEN kind != 'system' THEN id END), MIN(id)) AS mid", [$me->id])
-            ->groupBy('partner')->orderByDesc('mid')->limit($limit + 20)->get();
+            ->groupBy('partner')->orderByDesc('mid')->get();
+        $preferences = app(ChatPreferences::class)->all($me->id);
+        foreach ($preferences as $peer => $pref) {
+            if (!$rows->contains('partner', $peer)) $rows->push((object) ['partner' => $peer, 'mid' => 0]);
+        }
         if ($rows->isEmpty()) return [];
         $msgs = DB::table('friend_messages')->whereIn('id', $rows->pluck('mid')->all())->get()->keyBy('id');
         $users = User::whereIn('id', $rows->pluck('partner')->all())->where('status', 'active')->get()->keyBy('id');
@@ -416,7 +420,12 @@ class FriendChatService
         $out = [];
         foreach ($rows as $r) {
             $pid = (int) $r->partner; $m = $msgs->get($r->mid); $u = $users->get($pid);
-            if (!$m || !$u || !(isset($allowed[$pid]) || isset($former[$pid])) || (int) $m->id <= $this->cutoff($me->id, $pid)) continue;
+            if (!$u || !(isset($allowed[$pid]) || isset($former[$pid]))) continue;
+            $pref = $preferences[$pid] ?? null;
+            if ($pref && $pref->hidden_through_id !== null && (!$m || (int) $m->id <= (int) $pref->hidden_through_id)) continue;
+            $empty = !$m || (int) $m->id <= $this->cutoff($me->id, $pid);
+            // Clearing content must not remove an existing conversation from the list.
+            if (!$m) $m = (object) ['id' => 0, 'sender_id' => $me->id, 'file_path' => null, 'kind' => 'system', 'body' => '', 'created_at' => $pref->updated_at];
             $mine = (int) $m->sender_id === $me->id;
             $mime = $m->file_path ? self::realMime($m->file_name, $m->file_mime) : '';
             $text = ($m->deleted_at ?? null) !== null ? 'This message was deleted'
@@ -433,14 +442,15 @@ class FriendChatService
             $t = Carbon::parse($m->created_at, 'UTC')->setTimezone($tz);
             $out[] = [
                 'kind' => 'friend', 'id' => $pid, ...app(ContactNames::class)->fields($me, $u), 'username' => \App\Support\Username::plain($u->username), 'chat_url' => $u->chatUrl(), 'avatar_url' => $u->avatar_path ? asset('storage/' . $u->avatar_path) : null,
-                'preview' => $text, 'mine' => $mine, 'status' => $mine && !in_array($m->kind, ['call', 'system'], true) ? $this->tickState($m, $me->id) : null, 'message_kind' => $m->kind,
+                'pinned' => (bool) ($pref->pinned ?? false), 'muted' => (bool) ($pref->muted ?? false), 'archived' => (bool) ($pref->archived ?? false),
+                'preview' => $empty ? '' : $text, 'mine' => !$empty && $mine, 'status' => !$empty && $mine && !in_array($m->kind, ['call', 'system'], true) ? $this->tickState($m, $me->id) : null, 'message_kind' => $m->kind,
                 'unread' => (int) ($unread[$pid] ?? 0), 'online' => !isset($former[$pid]) && (bool) ($presence[$pid]['online'] ?? false), 'former' => !isset($allowed[$pid]),
                 'time' => $t->isSameDay($now) ? $t->format('H:i') : ($t->isSameDay($now->copy()->subDay()) ? 'Yesterday' : $t->format('M j')),
                 'at' => $t->toIso8601String(),
             ];
-            if (count($out) >= $limit) break;
         }
-        return $out;
+        usort($out, fn ($a, $b) => ($b['pinned'] <=> $a['pinned']) ?: strcmp($b['at'], $a['at']));
+        return array_slice($out, 0, $limit);
     }
 
     /** people you can forward to (friends + teammates) */
@@ -492,6 +502,9 @@ class FriendChatService
     public function clear(User $me, int $otherId): array
     {
         $this->viewableOrFail($me, $otherId);
+        if (Schema::hasTable('friend_chat_preferences')) DB::table('friend_chat_preferences')->insertOrIgnore([
+            'user_id' => $me->id, 'other_id' => $otherId, 'created_at' => now(), 'updated_at' => now(),
+        ]);
         $max = (int) DB::table('friend_messages')->where(fn ($w) => $this->pair($w, $me->id, $otherId))->max('id');
         if ($max > 0 && Schema::hasTable('friend_chat_clears')) {
             DB::table('friend_chat_clears')->updateOrInsert(['user_id' => $me->id, 'other_id' => $otherId], ['before_id' => $max]);
@@ -533,7 +546,8 @@ class FriendChatService
         $kinds = ['text', 'file', 'voice'];
         try { DB::table('friend_messages')->where('recipient_id', $me->id)->whereNull('delivered_at')->update(['delivered_at' => now()]); } catch (\Throwable $e) {} // the phone / browser has them: two ticks for the sender
         $unread = (int) DB::table('friend_messages')->where('recipient_id', $me->id)->whereNull('visible_to')->whereNull('read_at')->whereNull('deleted_at')->whereIn('kind', $kinds)->count();
-        $m = DB::table('friend_messages')->where('recipient_id', $me->id)->whereNull('visible_to')->whereNull('read_at')->whereNull('deleted_at')
+        $muted = array_keys(array_filter(app(ChatPreferences::class)->all($me->id), fn ($p) => $p->muted));
+        $m = DB::table('friend_messages')->whereNotIn('sender_id', $muted)->where('recipient_id', $me->id)->whereNull('visible_to')->whereNull('read_at')->whereNull('deleted_at')
             ->where(fn ($q) => $q->whereIn('kind', $kinds)->orWhere(fn ($w) => $w->where('kind', 'call')->whereIn('body', ['Missed call', 'Missed video call'])))
             ->orderByDesc('id')->first();
         if (!$m) return ['unread' => $unread, 'latest' => null];

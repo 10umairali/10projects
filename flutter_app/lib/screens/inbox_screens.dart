@@ -1,9 +1,14 @@
 import 'profile_avatar.dart';
+import '../core/conversation_header.dart';
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../core/api.dart';
+import '../core/mail_sync.dart';
 import '../core/refresh.dart';
+import '../core/realtime.dart';
+import 'person_profile_page.dart';
+import 'call_history_screen.dart';
 import '../core/notification_presentation.dart';
 import '../core/calls.dart';
 import '../core/conversation_visibility.dart';
@@ -30,7 +35,7 @@ class ConversationsPage extends StatefulWidget {
   State<ConversationsPage> createState() => _ConversationsPageState();
 }
 
-class _ConversationsPageState extends State<ConversationsPage> {
+class _ConversationsPageState extends State<ConversationsPage> with WidgetsBindingObserver {
   String _chip = 'all'; // all | unread | mine
   String _tag = '';
   String _q = '';
@@ -40,8 +45,37 @@ class _ConversationsPageState extends State<ConversationsPage> {
   final _selected = <int>{};
   final _key = GlobalKey<PagedListState>();
   String _channel = 'all'; // Chats tab: channel filter (all / whatsapp / telegram / sms / slack / live_chat)
-  Timer? _timer, _poller;
+  Timer? _timer, _poller, _searchDebounce;
+  List<Item> _emails = [];
   bool _syncing = false;
+  String? _headerSignature;
+  String get _folder => widget.folder;
+  String get _headerKey => widget.socialOnly ? 'chats' : widget.folder;
+
+  @override
+  void setState(VoidCallback fn) {
+    super.setState(fn);
+    _publishHeader();
+  }
+
+  void _publishHeader() {
+    final signature = '${_selectedFriends.join(',')}/${_selected.join(',')}/$_archivedFriends/$_organizing/${_emails.where((m) => _selected.contains(m['id'])).map((m) => '${m['is_muted']}:${m['is_starred']}').join(',')}/${_friends.where((f) => _selectedFriends.contains(f['id'])).map((f) => '${f['pinned']}:${f['muted']}').join(',')}';
+    if (signature == _headerSignature) return;
+    _headerSignature = signature;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final selecting = _selectedFriends.isNotEmpty || _selected.isNotEmpty;
+      ConversationHeader.set(_headerKey, selecting || _archivedFriends ? ConversationHeader(
+        selecting ? '${_selectedFriends.length + _selected.length}' : 'Archived',
+        selecting ? (_selectedFriends.isNotEmpty ? _friendSelectionBar() : _emailSelectionBar()) : const SizedBox.shrink(),
+        () => setState(() { if (selecting) { _selectedFriends.clear(); _selected.clear(); } else { _archivedFriends = false; } }),
+      ) : null);
+    });
+  }
+  StreamSubscription<Map<String, dynamic>>? _events;
+  final _selectedFriends = <int>{};
+  bool _archivedFriends = false, _organizing = false;
+  String? _lastRevision;
   int _lastId = 0, _lastUnread = -1, _lastTotal = -1;
 
   // ── Chats tab: direct chats with Dahimail friends and teammates are part of the same list ──
@@ -59,7 +93,7 @@ class _ConversationsPageState extends State<ConversationsPage> {
     if (!widget.socialOnly || !mounted || _friendsLoading) return;
     _friendsLoading = true;
     try {
-      final j = await Api.of(context).get('friends/chats');
+      final j = await Api.of(context).getNoCache('friends/chats');
       if (!mounted) return;
       setState(() => _applyFriends(j));
     } catch (_) {} finally { _friendsLoading = false; }
@@ -69,7 +103,7 @@ class _ConversationsPageState extends State<ConversationsPage> {
     if (!widget.socialOnly) return const [];
     if (_channel != 'all' && _channel != 'friends') return const []; // another channel is selected
     if (_chip == 'mine') return const [];                              // "assigned to me" is for customer chats
-    var l = _friends;
+    var l = _friends.where((f) => (f['archived'] == true) == _archivedFriends).toList();
     if (_chip == 'unread') l = l.where((f) => ((f['unread'] as num?) ?? 0) > 0).toList();
     if (_q.isNotEmpty) {
       final q = _q.toLowerCase();
@@ -80,6 +114,7 @@ class _ConversationsPageState extends State<ConversationsPage> {
 
   /// newest first; a row without a time (older server) stays where the server put it, friends first
   int _byTime(Item a, Item b) {
+    if ((a['pinned'] == true) != (b['pinned'] == true)) return a['pinned'] == true ? -1 : 1;
     final x = DateTime.tryParse('${a['at'] ?? ''}'), y = DateTime.tryParse('${b['at'] ?? ''}');
     if (x == null && y == null) return 0;
     if (x == null) return a['kind'] == 'friend' ? -1 : 1;
@@ -93,9 +128,14 @@ class _ConversationsPageState extends State<ConversationsPage> {
     final accent = AppColors.accentOf(c);
     final st = '${f['status'] ?? ''}';
     return Material(
-      color: unread > 0 ? Color.alphaBlend(AppColors.primary.withValues(alpha: 0.05), surface) : surface,
+      color: _selectedFriends.contains(f['id']) ? Theme.of(c).colorScheme.primaryContainer : unread > 0 ? Color.alphaBlend(AppColors.primary.withValues(alpha: 0.05), surface) : surface,
       child: InkWell(
+        onLongPress: () => setState(() { _selected.clear(); _selectedFriends.add(f['id'] as int); }),
         onTap: () async {
+          if (_selectedFriends.isNotEmpty) {
+            setState(() { if (!_selectedFriends.remove(f['id'])) _selectedFriends.add(f['id'] as int); });
+            return;
+          }
           await pushPage(c, FriendChatPage(friend: {'id': f['id'], 'name': f['name'], 'avatar_url': f['avatar_url'], 'former': f['former']}, features: _friendFeatures));
           _loadFriends();
         },
@@ -104,7 +144,7 @@ class _ConversationsPageState extends State<ConversationsPage> {
           decoration: BoxDecoration(border: Border(bottom: BorderSide(color: AppColors.borderOf(c)))),
           child: Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
             Stack(clipBehavior: Clip.none, children: [
-              ProfileAvatar(f, radius: 24),
+              if (_selectedFriends.isNotEmpty) CircleAvatar(radius: 24, child: Icon(_selectedFriends.contains(f['id']) ? Icons.check_rounded : Icons.circle_outlined)) else ProfileAvatar(f, radius: 24),
               if (f['online'] == true) Positioned(right: -1, bottom: -1, child: Container(width: 13, height: 13, decoration: BoxDecoration(color: AppColors.success, shape: BoxShape.circle, border: Border.all(color: surface, width: 2)))),
             ]),
             const SizedBox(width: 14),
@@ -119,6 +159,8 @@ class _ConversationsPageState extends State<ConversationsPage> {
                 Row(children: [
                   if (hasMessageReceipt(f)) Padding(padding: const EdgeInsets.only(right: 4), child: Icon(st == 'sent' || st.isEmpty ? Icons.done_rounded : Icons.done_all_rounded, size: 16, color: st == 'read' ? const Color(0xFF53BDEB) : AppColors.muted)),
                   Expanded(child: Text('${f['preview'] ?? ''}', maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 13.5, color: unread > 0 ? null : AppColors.muted, fontWeight: unread > 0 ? FontWeight.w600 : FontWeight.w400))),
+                  if (f['pinned'] == true) const Padding(padding: EdgeInsets.only(left: 6), child: Icon(Icons.push_pin_rounded, size: 15)),
+                  if (f['muted'] == true) const Padding(padding: EdgeInsets.only(left: 6), child: Icon(Icons.notifications_off_outlined, size: 15)),
                   if (unread > 0)
                     Container(
                       margin: const EdgeInsets.only(left: 8),
@@ -142,29 +184,24 @@ class _ConversationsPageState extends State<ConversationsPage> {
     if (!mounted || !TickerMode.valuesOf(context).enabled) return;
     _loadFriends();
     try {
-      final j = Api.obj(await Api.of(context).get('inbox/poll', query: {'last_id': '$_lastId'}));
+      final j = Api.obj(await Api.of(context).getNoCache('inbox/poll', query: {'last_id': '$_lastId'}));
       final latest = (j['latest_id'] as num?)?.toInt() ?? 0, unread = (j['unread'] as num?)?.toInt() ?? 0, total = (j['total'] as num?)?.toInt() ?? 0;
+      final revision = j['revision']?.toString();
       final first = _lastUnread == -1;
-      final changed = !first && (latest != _lastId || unread != _lastUnread || total != _lastTotal);
-      _lastId = latest; _lastUnread = unread; _lastTotal = total;
+      final changed = !first && (latest != _lastId || unread != _lastUnread || total != _lastTotal || revision != _lastRevision);
+      _lastId = latest; _lastUnread = unread; _lastTotal = total; _lastRevision = revision;
       if (changed && mounted) _key.currentState?.reload();
     } catch (_) {}
   }
 
   /// Pulls new mail from the mail server (same call the website's inbox makes) and refreshes the list.
   Future<void> _sync() async {
-    if (_syncing || !mounted || !TickerMode.valuesOf(context).enabled) return;
+    if (widget.socialOnly || _syncing || !mounted || WidgetsBinding.instance.lifecycleState == AppLifecycleState.paused || !TickerMode.valuesOf(context).enabled) return;
     setState(() => _syncing = true);
     try {
-      final api = Api.of(context);
-      var got = 0;
-      for (var i = 0; i < 6; i++) {
-        final r = await api.post('inbox/sync');
-        final n = r is Map && r['synced'] is num ? (r['synced'] as num).toInt() : 0;
-        got += n;
-        if (!(r is Map && r['has_more'] == true)) break;
-      }
-      if (got > 0 && mounted) _key.currentState?.reload();
+      await MailSync.sync(context.read<Session>());
+      // Sync may update an existing row or hydrate its body without inserting a new one.
+      if (mounted) await _key.currentState?.reload();
     } catch (_) {
     } finally {
       if (mounted) setState(() => _syncing = false);
@@ -173,9 +210,13 @@ class _ConversationsPageState extends State<ConversationsPage> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _events?.cancel();
     _timer?.cancel();
     _poller?.cancel();
+    _searchDebounce?.cancel();
     _ctrl.dispose();
+    WidgetsBinding.instance.addPostFrameCallback((_) => ConversationHeader.set(_headerKey, null));
     CallManager.I.unreadChat.removeListener(_loadFriends);
     super.dispose();
   }
@@ -183,10 +224,19 @@ class _ConversationsPageState extends State<ConversationsPage> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _events = Realtime.I.events.listen((event) {
+      if (!mounted || WidgetsBinding.instance.lifecycleState == AppLifecycleState.paused) return;
+      final type = '${event['type'] ?? ''}';
+      if (!(type == 'reconnected' || type == 'email' || type.startsWith('email_') || type.startsWith('chat') || type.startsWith('friend') || const ['message', 'contact_reply', 'new_conversation'].contains(type))) return;
+      if (type == 'reconnected') { _sync(); }
+      _pollNow();
+      _key.currentState?.reload();
+    });
     if (widget.socialOnly) _applyFriends(Api.peek('friends/chats'));
     WidgetsBinding.instance.addPostFrameCallback((_) { _pollNow(); _sync(); _loadFriends(); });
     CallManager.I.unreadChat.addListener(_loadFriends); // a friend wrote -> the row moves up at once
-    _timer = Timer.periodic(const Duration(seconds: 60), (_) => _sync());
+    _timer = Timer.periodic(const Duration(seconds: 10), (_) => _sync());
     _poller = Timer.periodic(const Duration(seconds: 6), (_) => _pollNow());
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       final api = Api.of(context);
@@ -198,9 +248,73 @@ class _ConversationsPageState extends State<ConversationsPage> {
     });
   }
 
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) { _sync(); _pollNow(); }
+  }
+
+  Future<void> _organizeFriends(String action) async {
+    if (_organizing || _selectedFriends.isEmpty) return;
+    if ((action == 'delete' || action == 'clear') && !await confirmDialog(context,
+        action == 'clear' ? 'Clear chats?' : 'Delete chats?',
+        action == 'clear' ? 'Messages disappear for you. The chats stay in your list and others keep their copies.' : 'Remove chats from your list. A new message will bring them back. Your friendships stay.',
+        action: action == 'clear' ? 'Clear' : 'Delete', danger: true)) { return; }
+    if (!mounted) return;
+    setState(() => _organizing = true);
+    final ok = await run(context, (a) => a.post('friends/chats/organize', {'ids': _selectedFriends.toList(), 'action': action}), ok: '*');
+    if (mounted) {
+      setState(() { _organizing = false; if (ok) _selectedFriends.clear(); });
+      if (ok) { await _loadFriends(); AppRefresh.bump(); }
+    }
+  }
+
+  Widget _friendSelectionBar() {
+    final chosen = _friends.where((f) => _selectedFriends.contains(f['id'])).toList();
+    final pinned = chosen.isNotEmpty && chosen.every((f) => f['pinned'] == true);
+    final muted = chosen.isNotEmpty && chosen.every((f) => f['muted'] == true);
+    return Row(mainAxisSize: MainAxisSize.min, children: [
+      IconButton(tooltip: pinned ? 'Unpin chats' : 'Pin chats (maximum 5)', onPressed: _organizing ? null : () => _organizeFriends(pinned ? 'unpin' : 'pin'), icon: Icon(pinned ? Icons.push_pin : Icons.push_pin_outlined)),
+      IconButton(tooltip: muted ? 'Unmute' : 'Mute notifications', onPressed: _organizing ? null : () => _organizeFriends(muted ? 'unmute' : 'mute'), icon: Icon(muted ? Icons.notifications_active_outlined : Icons.notifications_off_outlined)),
+      IconButton(tooltip: _archivedFriends ? 'Unarchive' : 'Archive', onPressed: _organizing ? null : () => _organizeFriends(_archivedFriends ? 'unarchive' : 'archive'), icon: Icon(_archivedFriends ? Icons.unarchive_outlined : Icons.archive_outlined)),
+      IconButton(tooltip: 'Delete chats', onPressed: _organizing ? null : () => _organizeFriends('delete'), icon: const Icon(Icons.delete_outline)),
+      PopupMenuButton<String>(tooltip: 'Chat actions', enabled: !_organizing, onSelected: (value) {
+        if (value == 'clear') { _organizeFriends('clear'); }
+        else if (value == 'profile') { pushPage(context, PersonProfilePage(userId: _selectedFriends.single)); }
+        else if (value == 'calls') { pushPage(context, CallHistoryPage(userId: _selectedFriends.single)); }
+      }, itemBuilder: (_) => [
+        if (_selectedFriends.length == 1) ...[
+          const PopupMenuItem(value: 'profile', child: Text('View profile')),
+          const PopupMenuItem(value: 'calls', child: Text('Call history')),
+        ],
+        PopupMenuItem(value: 'clear', child: Text(_selectedFriends.length == 1 ? 'Clear chat' : 'Clear chats')),
+      ]),
+    ]);
+  }
+
+  Widget _emailSelectionBar() {
+    final chosen = _emails.where((m) => _selected.contains(m['id'])).toList();
+    final muted = chosen.isNotEmpty && chosen.every((m) => m['is_muted'] == true);
+    final starred = chosen.isNotEmpty && chosen.every((m) => m['is_starred'] == true);
+    Widget action(String label, IconData icon, VoidCallback onPressed) => IconButton(
+      tooltip: label, icon: Icon(icon, size: 22), onPressed: onPressed,
+      constraints: const BoxConstraints.tightFor(width: 38, height: 48), padding: EdgeInsets.zero,
+    );
+    return Row(mainAxisSize: MainAxisSize.min, children: [
+      if (_folder != 'trash') ...[
+        action('Mark read', Icons.mark_email_read_outlined, () => _bulk('mark_read')),
+        action(starred ? 'Unstar' : 'Star', starred ? Icons.star_rounded : Icons.star_outline_rounded, () => _bulk(starred ? 'unstar' : 'star')),
+        if (!widget.socialOnly) action(muted ? 'Unmute' : 'Mute notifications', muted ? Icons.notifications_active_outlined : Icons.notifications_off_outlined, () => _bulk(muted ? 'unmute' : 'mute')),
+        action(_folder == 'archive' ? 'Unarchive' : 'Archive', _folder == 'archive' ? Icons.unarchive_outlined : Icons.archive_outlined, () => _bulk(_folder == 'archive' ? 'unarchive' : 'archive')),
+      ],
+      action(_folder == 'trash' ? 'Delete forever' : 'Delete', Icons.delete_outline, () async {
+        if (await confirmDialog(context, _folder == 'trash' ? 'Delete forever?' : 'Delete conversations?', _folder == 'trash' ? 'Permanently delete selected conversations?' : 'Move selected conversations to the bin?', danger: true)) _bulk(_folder == 'trash' ? 'force_delete' : 'delete');
+      }),
+    ]);
+  }
+
   Map<String, String> get _query {
     final chosen = widget.socialOnly && _channel != 'all' && _channel != 'friends' ? (_channel == 'live_chat' ? 'chat' : _channel) : widget.channel;
-    final q = <String, String>{'folder': widget.folder, 'channel': chosen};
+    final q = <String, String>{'folder': _folder, 'channel': chosen};
     if (_q.isNotEmpty) q['search'] = _q;
     if (_tag.isNotEmpty) q['tag'] = _tag;
     if (_account != null) q['account_id'] = '$_account';
@@ -212,6 +326,7 @@ class _ConversationsPageState extends State<ConversationsPage> {
   }
 
   bool _filter(Item c) {
+    if (widget.socialOnly && (_archivedFriends || _selectedFriends.isNotEmpty)) return false;
     if (widget.socialOnly && c['channel'] == 'email') return false;
     if (widget.socialOnly && _channel == 'friends') return false; // the Friends chip shows only direct chats
     if (_chip == 'unread' && c['is_unread'] != true) return false;
@@ -229,10 +344,12 @@ class _ConversationsPageState extends State<ConversationsPage> {
 
   @override
   Widget build(BuildContext context) {
-    final inTrash = widget.folder == 'trash';
+    final inTrash = _folder == 'trash';
+    _publishHeader();
     return PagedList(
       key: _key,
       endpoint: 'inbox/conversations',
+      onLoaded: (items) { if (mounted) setState(() => _emails = List<Item>.of(items)); },
       query: _query,
       filter: _filter,
       extraItems: widget.socialOnly ? _friendItems : null,
@@ -243,26 +360,15 @@ class _ConversationsPageState extends State<ConversationsPage> {
       header: Column(children: [
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
-          child: _selected.isNotEmpty
-              ? Row(children: [
-                  Text('${_selected.length} selected', style: const TextStyle(fontWeight: FontWeight.w700)),
-                  const Spacer(),
-                  if (!inTrash) IconButton(tooltip: 'Mark read', icon: const Icon(Icons.mark_email_read_outlined), onPressed: () => _bulk('mark_read')),
-                  if (!inTrash) IconButton(tooltip: 'Star', icon: const Icon(Icons.star_outline_rounded), onPressed: () => _bulk('star')),
-                  if (!inTrash) IconButton(tooltip: 'Archive', icon: const Icon(Icons.archive_outlined), onPressed: () => _bulk('archive')),
-                  IconButton(tooltip: inTrash ? 'Delete forever' : 'Delete', icon: const Icon(Icons.delete_outline, color: AppColors.danger), onPressed: () async {
-                    if (await confirmDialog(context, inTrash ? 'Delete forever?' : 'Move to bin?', '${_selected.length} conversation(s)', danger: true)) _bulk(inTrash ? 'force_delete' : 'delete');
-                  }),
-                  IconButton(tooltip: 'Close', icon: const Icon(Icons.close), onPressed: () => setState(() => _selected.clear())),
-                ])
-              : TextField(
+          child: _selectedFriends.isNotEmpty || _selected.isNotEmpty ? const SizedBox.shrink() : TextField(
                   controller: _ctrl,
                   textInputAction: TextInputAction.search,
-                  onSubmitted: (v) => setState(() => _q = v.trim()),
+                  onChanged: (v) { _searchDebounce?.cancel(); _searchDebounce = Timer(const Duration(milliseconds: 300), () { if (mounted) setState(() => _q = v.trim()); }); },
+                  onSubmitted: (v) { _searchDebounce?.cancel(); setState(() => _q = v.trim()); },
                   decoration: InputDecoration(
-                    hintText: 'Search conversations',
+                    hintText: widget.socialOnly ? 'Search conversations' : 'Search email by sender name or email',
                     prefixIcon: const Icon(Icons.search),
-                    suffixIcon: _q.isEmpty ? null : IconButton(tooltip: 'Clear search', icon: const Icon(Icons.close), onPressed: () { _ctrl.clear(); setState(() => _q = ''); }),
+                    suffixIcon: _q.isEmpty ? null : IconButton(tooltip: 'Clear search', icon: const Icon(Icons.close), onPressed: () { _searchDebounce?.cancel(); _ctrl.clear(); setState(() => _q = ''); }),
                   ),
                 ),
         ),
@@ -334,6 +440,10 @@ class _ConversationsPageState extends State<ConversationsPage> {
               ),
           ]),
         ),
+        if (widget.socialOnly && !_archivedFriends && widget.folder == 'inbox')
+          ListTile(dense: true, leading: const Icon(Icons.archive_outlined), title: const Text('Archived'),
+            trailing: const Icon(Icons.chevron_right, size: 18),
+            onTap: () => setState(() { _selected.clear(); _selectedFriends.clear(); _archivedFriends = true; })),
       ]),
       itemBuilder: (c, it, reload) {
         if (it['kind'] == 'friend') return _friendRow(c, it);
@@ -851,6 +961,7 @@ class _ConversationDetailPageState extends State<ConversationDetailPage> with Co
     }
 
     return Column(children: [
+      Padding(padding: const EdgeInsets.fromLTRB(16, 12, 16, 8), child: Align(alignment: Alignment.centerLeft, child: Text('${_conv['subject'] ?? '(No subject)'}', maxLines: 2, overflow: TextOverflow.ellipsis, style: Theme.of(c).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w600)))),
       if (_msgs.length > 1)
         SizedBox(
           height: 52,
@@ -874,7 +985,7 @@ class _ConversationDetailPageState extends State<ConversationDetailPage> with Co
         decoration: BoxDecoration(color: Theme.of(c).colorScheme.surface, border: Border(bottom: BorderSide(color: AppColors.borderOf(c)))),
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Avatar(name.isEmpty ? '?' : name, radius: 20),
+            Avatar(name.isEmpty ? '?' : name, radius: 24),
             const SizedBox(width: 12),
             Expanded(
               child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [

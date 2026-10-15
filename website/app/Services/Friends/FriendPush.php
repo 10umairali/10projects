@@ -118,7 +118,7 @@ class FriendPush
         $body = (string) ($row->body ?? ''); $fileName = (string) ($row->file_name ?? ''); $mime = (string) ($row->file_mime ?? '');
         self::later(function () use ($id, $from, $to, $kind, $body, $fileName, $mime) {
             $sender = User::find($from); $rcpt = User::find($to);
-            if (!$sender || !$rcpt) return;
+            if (!$sender || !$rcpt || app(ChatPreferences::class)->muted($to, $from)) return;
             $text = match (true) {
                 $kind === 'voice' => '🎤 Voice message',
                 $kind === 'file' && str_starts_with($mime, 'image/') => '📷 ' . ($body !== '' ? $body : 'Photo'),

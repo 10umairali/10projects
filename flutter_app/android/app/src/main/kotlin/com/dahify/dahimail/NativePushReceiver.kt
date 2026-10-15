@@ -204,6 +204,19 @@ open class NativePushReceiver : FlutterFirebaseMessagingReceiver() {
             return PendingIntent.getBroadcast(context, id, intent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
         }
 
+        private fun messageAction(context: Context, id: Int, payload: String, actionId: String, mutable: Boolean): PendingIntent {
+            val intent = Intent(context, ActionBroadcastReceiver::class.java).apply {
+                action = ActionBroadcastReceiver.ACTION_TAPPED
+                data = Uri.parse("dahimail://notification/$id/$actionId")
+                putExtra("notificationId", id)
+                putExtra("payload", payload)
+                putExtra("actionId", actionId)
+                putExtra("cancelNotification", false)
+            }
+            return PendingIntent.getBroadcast(context, id, intent, PendingIntent.FLAG_UPDATE_CURRENT or
+                (if (mutable && Build.VERSION.SDK_INT >= 31) PendingIntent.FLAG_MUTABLE else PendingIntent.FLAG_IMMUTABLE))
+        }
+
         private fun launch(context: Context, id: Int, payload: String, action: String? = null): PendingIntent {
             val intent = Intent(context, MainActivity::class.java).apply {
                 flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP
@@ -386,7 +399,7 @@ open class NativePushReceiver : FlutterFirebaseMessagingReceiver() {
             val sender = data["sender_name"].orEmpty().ifBlank { data["title"].orEmpty() }
             val builder = NotificationCompat.Builder(context, channelId)
                 .setLargeIcon(avatarPlaceholder(sender))
-                .setSmallIcon(R.drawable.ic_stat_notify).setSubText(label)
+                .setSmallIcon(notificationIcon(data)).setSubText(label)
                 .setContentTitle(sender).setContentText(body)
                 .setStyle(NotificationCompat.BigTextStyle().bigText(body).setBigContentTitle(sender))
                 .setPriority(NotificationCompat.PRIORITY_HIGH).setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
@@ -394,6 +407,20 @@ open class NativePushReceiver : FlutterFirebaseMessagingReceiver() {
                 .setDefaults(NotificationCompat.DEFAULT_LIGHTS or (if (vibrate) NotificationCompat.DEFAULT_VIBRATE else 0) or
                     (if (sound == "default") NotificationCompat.DEFAULT_SOUND else 0))
                 .setCategory(if (data["reply_kind"] != null) NotificationCompat.CATEGORY_MESSAGE else NotificationCompat.CATEGORY_EVENT)
+            if (type == "chat") {
+                val person = Person.Builder().setName(sender).setKey(data["sender_id"].orEmpty())
+                    .setIcon(IconCompat.createWithBitmap(avatarPlaceholder(sender))).build()
+                builder.setStyle(NotificationCompat.MessagingStyle(Person.Builder().setName("You").build())
+                    .addMessage(body, System.currentTimeMillis(), person))
+            }
+            builder.addAction(0, "View", launch(context, id, JSONObject(data + ("notification_action" to "view")).toString(), "notification_view"))
+            val replyable = type in listOf("chat", "email_received", "new_email", "contact_reply", "message", "new_conversation") &&
+                data["reply_kind"] in listOf("friend", "conversation") && (data["reply_id"]?.toIntOrNull() ?: 0) > 0
+            if (replyable) builder.addAction(NotificationCompat.Action.Builder(0, "Reply", messageAction(context, id, payload, "notification_reply", true))
+                .addRemoteInput(androidx.core.app.RemoteInput.Builder("FlutterLocalNotificationsPluginInputResult").setLabel("Reply").build())
+                .setAllowGeneratedReplies(true).build())
+            if (type == "chat" && (data["message_id"]?.toIntOrNull() ?: 0) > 0)
+                builder.addAction(0, "Mark as read", messageAction(context, id, payload, "notification_read", false))
             val manager = context.getSystemService(NotificationManager::class.java)
             wakeDisplay(context, "notification")
             manager.notify(id, builder.build())

@@ -283,6 +283,8 @@ Route::middleware(['auth', 'verified', 'workspace'])->group(function () {
     Route::post('/inbox/api/conversations/{id}/action', [\App\Http\Controllers\InboxApiController::class, 'action']);
     Route::post('/inbox/api/conversations/{id}/summarize', [\App\Http\Controllers\InboxApiController::class, 'summarize']);
     Route::post('/inbox/api/conversations/{id}/ai-chat', [\App\Http\Controllers\InboxApiController::class, 'aiChat']);
+    Route::post('/inbox/api/conversations/{id}/send', [\App\Http\Controllers\Api\Mobile\SendController::class, 'reply']);
+    Route::get('/inbox/api/messages/{id}/body', [\App\Http\Controllers\Api\Mobile\InboxExtrasController::class, 'messageBody']);
     Route::post('/inbox/api/bulk', [\App\Http\Controllers\InboxApiController::class, 'bulk']);
     Route::get('/inbox/api/poll', [\App\Http\Controllers\InboxApiController::class, 'poll']);
     Route::get('/inbox/api/sidebar', [\App\Http\Controllers\InboxApiController::class, 'sidebar']);
@@ -550,8 +552,9 @@ Route::middleware(['auth', 'verified', 'workspace'])->group(function () {
     Route::get('/friends/chat/{userId}', [\App\Http\Controllers\Friends\ChatPageController::class, 'legacy'])->whereNumber('userId')->name('friends.chat.legacy');
     Route::get('/friends/chat/{username}', [\App\Http\Controllers\Friends\ChatPageController::class, 'username'])->name('friends.chat');
     Route::get('/people/u/{username}', function ($username) { $u = \App\Support\Username::find($username); return view('friends.person', ['p' => app(\App\Services\Friends\PeopleService::class)->profile(auth()->user(), $u->id)]); })->name('people.username');
+    Route::post('/friends/api/chats/organize', [\App\Http\Controllers\Friends\FriendChatController::class, 'organize']);
     Route::delete('/friends/api/messages/{userId}', [\App\Http\Controllers\Friends\FriendChatController::class, 'clear'])->whereNumber('userId');
-    Route::get('/people', function () { return view('friends.index'); })->name('people');
+    Route::get('/people', function () { return view('friends.people'); })->name('people');
     Route::get('/people/calls', function () { return view('friends.calls'); })->name('calls.history');
     Route::get('/people/{userId}', function ($userId) { return view('friends.person', ['p' => app(\App\Services\Friends\PeopleService::class)->profile(auth()->user(), (int) $userId)]); })->whereNumber('userId')->name('people.show');
     Route::get('/meetings/recording/{id}', [\App\Http\Controllers\Meetings\MeetingRecordingController::class, 'file'])->whereNumber('id')->name('meetings.recording');
@@ -823,6 +826,14 @@ Route::prefix('admin')->name('admin.')->middleware(['auth', 'verified', 'admin',
     Route::post('/friends-settings', [\App\Http\Controllers\Admin\FriendsSettingsController::class, 'update'])->name('friends-settings.save');
 
     Route::get('/notifications', function () { return view('admin.notifications'); })->name('notifications');
+    Route::middleware('admin:super_admin')->prefix('broadcasts')->name('broadcasts.')->group(function () {
+        Route::get('/', [\App\Http\Controllers\Admin\BroadcastController::class, 'index'])->name('index');
+        Route::post('/', [\App\Http\Controllers\Admin\BroadcastController::class, 'store'])->name('store');
+        Route::put('/{broadcast}', [\App\Http\Controllers\Admin\BroadcastController::class, 'store'])->name('update');
+        Route::get('/{broadcast}', [\App\Http\Controllers\Admin\BroadcastController::class, 'show'])->name('show');
+        Route::post('/{broadcast}/send', [\App\Http\Controllers\Admin\BroadcastController::class, 'send'])->middleware('throttle:10,1')->name('send');
+        Route::post('/{broadcast}/duplicate', [\App\Http\Controllers\Admin\BroadcastController::class, 'duplicate'])->name('duplicate');
+    });
 
     // ── Roles (full CRUD with Spatie Permission) ─────────────────
     Route::get('/roles/export', [\App\Http\Controllers\Admin\RoleController::class, 'export'])->name('roles.export');

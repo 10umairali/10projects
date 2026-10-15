@@ -151,6 +151,7 @@
         html[data-theme="light"] .inbox-root select { background-color: #ffffff; color: #1e293b; border-color: #cbd5e1; color-scheme: light; }
         html[data-theme="light"] .inbox-root input::placeholder,
         html[data-theme="light"] .inbox-root textarea::placeholder { color: #94a3b8; }
+        html .inbox-root .mail-avatar-initial { background:#dbeafe!important; color:#1e3a8a!important; font-size:18px!important; font-weight:700!important; }
     </style>
 </head>
 <body class="inbox-page h-screen w-screen overflow-hidden flex flex-col bg-surface text-ink antialiased font-sans">

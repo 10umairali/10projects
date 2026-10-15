@@ -287,10 +287,15 @@ class Avatar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final c = color ?? colorFor(name);
-    if (url != null && url!.isNotEmpty) {
-      return CircleAvatar(radius: radius, backgroundColor: c.withValues(alpha: 0.14), backgroundImage: NetworkImage(url!), onBackgroundImageError: (_, __) {});
-    }
-    return CircleAvatar(radius: radius, backgroundColor: c.withValues(alpha: 0.14), child: Text(initials(name), style: TextStyle(color: c, fontWeight: FontWeight.w700, fontSize: radius * 0.72)));
+    final label = name.trim();
+    final fallback = label.isEmpty || label.toLowerCase() == 'unknown' || label == 'null'
+        ? Icon(Icons.person_rounded, color: Colors.white, size: radius)
+        : Text(label.characters.first.toUpperCase(), style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700).copyWith(fontSize: radius * 0.95));
+    return CircleAvatar(radius: radius, backgroundColor: c,
+      foregroundImage: url != null && url!.trim().isNotEmpty ? NetworkImage(url!) : null,
+      onForegroundImageError: url != null && url!.trim().isNotEmpty ? (_, __) {} : null,
+      child: fallback);
+
   }
 }
 

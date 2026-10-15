@@ -20,6 +20,7 @@ class FriendsHub extends Component
 
     public function mount(): void
     {
+        $this->setTab((string) request()->query('tab', 'friends'));
         $this->reload();
     }
 
@@ -40,7 +41,7 @@ class FriendsHub extends Component
 
     public function setTab(string $tab): void
     {
-        $this->tab = in_array($tab, ['all', 'friends', 'team', 'requests', 'suggestions', 'former'], true) ? $tab : 'all';
+        $this->tab = in_array($tab, ['all', 'friends', 'team', 'requests', 'suggestions', 'former', 'sent', 'find'], true) ? $tab : 'all';
         $this->notice = null;
     }
 

@@ -22,6 +22,12 @@ use Webklex\PHPIMAP\Message as ImapMessage;
 
 class EmailSyncService
 {
+    protected function messageIdentity(?string $header, EmailAccount $account, string $providerId): string
+    {
+        $id = trim((string) $header, " \t\r\n<>");
+        return $id !== '' ? '<'.$id.'>' : '<sync-'.hash('sha256', $account->id.':'.$providerId).'@local.invalid>';
+    }
+
     /**
      * Sync emails from a connected account.
      * Returns the count of new messages synced.
@@ -33,6 +39,7 @@ class EmailSyncService
             return 0;
         }
 
+        $syncStartedAt = now();
         try {
             $count = match ($account->provider) {
                 'imap', 'custom' => $this->syncImap($account),
@@ -42,7 +49,7 @@ class EmailSyncService
             };
 
             $account->update([
-                'last_synced_at' => now(),
+                'last_synced_at' => $syncStartedAt,
                 'status' => 'connected',
                 'error_message' => null,
             ]);
@@ -115,6 +122,7 @@ class EmailSyncService
 
     protected function syncGmailBatchLocked(EmailAccount $account, int $limit): array
     {
+        $syncStartedAt = now();
         $account = $this->refreshGmailTokenLocked($account, 10);
 
         $client = new GoogleClient();
@@ -197,7 +205,7 @@ class EmailSyncService
         } else {
             // Pure incremental — safe to advance the anchor
             $account->update([
-                'last_synced_at' => now(),
+                'last_synced_at' => $syncStartedAt,
                 'status' => 'connected',
                 'error_message' => null,
             ]);
@@ -324,6 +332,7 @@ class EmailSyncService
             Log::info("EmailSync: Connected to {$account->email}/{$folderName}");
 
             try {
+                $uidValidity = (int) (@imap_status($mbox, $mailbox, SA_UIDVALIDITY)->uidvalidity ?? 0);
                 $folderLastUid = $folderMeta['last_uid'] ?? null;
                 $oldestUid = $folderMeta['oldest_uid'] ?? null;
                 $backfillDone = $folderMeta['backfill_done'] ?? false;
@@ -363,6 +372,15 @@ class EmailSyncService
 
                     foreach ($allOverviews as $ov) {
                         try {
+                            $ov->uidvalidity = $uidValidity;
+                            if (empty($ov->from) || empty($ov->message_id)) {
+                                $rawHeader = @imap_fetchheader($mbox, $ov->uid, FT_UID);
+                                if ($rawHeader) {
+                                    $parsed = imap_rfc822_parse_headers($rawHeader);
+                                    $ov->from = $parsed->fromaddress ?? $ov->from ?? '';
+                                    $ov->message_id = $parsed->message_id ?? $ov->message_id ?? null;
+                                }
+                            }
                             $result = $this->processImapOverview($ov, $account, $folderName);
                             if ($result === true) {
                                 $newCount++;
@@ -387,7 +405,6 @@ class EmailSyncService
                     }
                     $account->update([
                         'sync_folders' => $syncFolders,
-                        'last_synced_at' => now(),
                     ]);
 
                     // Move window backwards
@@ -449,10 +466,10 @@ class EmailSyncService
     protected function processImapOverview(object $ov, EmailAccount $account, string $folderName = 'INBOX'): bool
     {
         // Use overview's message_id directly (already fetched in batch)
-        $messageIdHeader = ! empty($ov->message_id) ? trim($ov->message_id) : null;
+        $messageIdHeader = $this->messageIdentity($ov->message_id ?? null, $account, 'imap:'.$folderName.':'.($ov->uidvalidity ?? '').':'.($ov->uid ?? ''));
 
         // Skip if already synced
-        if ($messageIdHeader && Message::where('message_id_header', $messageIdHeader)
+        if ($messageIdHeader && Message::withoutGlobalScopes()->whereIn('message_id_header', [$messageIdHeader, trim($messageIdHeader, '<>')])
                 ->where('workspace_id', $account->workspace_id)->exists()) {
             return false;
         }
@@ -470,6 +487,8 @@ class EmailSyncService
             $fromAddress = trim($fromRaw);
             $fromName = $fromAddress;
         }
+
+        if ($fromAddress === '') return false;
 
         // Parse To from overview
         $toAddresses = [];
@@ -814,10 +833,10 @@ class EmailSyncService
      */
     protected function processImapMessage(ImapMessage $imapMessage, EmailAccount $account): bool
     {
-        $messageIdHeader = $imapMessage->getMessageId()?->toString();
+        $messageIdHeader = $this->messageIdentity($imapMessage->getMessageId()?->toString(), $account, 'imap:'.$imapMessage->getFolderPath().':'.$imapMessage->getUid());
 
         // Skip if already synced (unique constraint also prevents duplicates at DB level)
-        if ($messageIdHeader && Message::where('message_id_header', $messageIdHeader)
+        if ($messageIdHeader && Message::withoutGlobalScopes()->whereIn('message_id_header', [$messageIdHeader, trim($messageIdHeader, '<>')])
                 ->where('workspace_id', $account->workspace_id)->exists()) {
             return false;
         }
@@ -1244,12 +1263,12 @@ class EmailSyncService
     {
         $headers = collect($gmailMessage->getPayload()->getHeaders());
 
-        $getHeader = fn (string $name) => $headers->firstWhere('name', $name)?->getValue();
+        $getHeader = fn (string $name) => $headers->first(fn ($header) => strcasecmp($header->getName(), $name) === 0)?->getValue();
 
-        $messageIdHeader = $getHeader('Message-ID') ?? $getHeader('Message-Id');
+        $messageIdHeader = $this->messageIdentity($getHeader('Message-ID') ?? $getHeader('Message-Id'), $account, 'gmail:'.$gmailMessage->getId());
 
         // Skip if already synced (scoped to workspace to prevent cross-workspace dedup)
-        if ($messageIdHeader && Message::where('message_id_header', $messageIdHeader)
+        if ($messageIdHeader && Message::withoutGlobalScopes()->whereIn('message_id_header', [$messageIdHeader, trim($messageIdHeader, '<>')])
                 ->where('workspace_id', $account->workspace_id)->exists()) {
             return false;
         }
@@ -1523,10 +1542,10 @@ class EmailSyncService
      */
     protected function processOutlookMessage(array $graphMessage, EmailAccount $account, \GuzzleHttp\Client $httpClient, string $accessToken): bool
     {
-        $messageIdHeader = $graphMessage['internetMessageId'] ?? null;
+        $messageIdHeader = $this->messageIdentity($graphMessage['internetMessageId'] ?? null, $account, 'outlook:'.$graphMessage['id']);
 
         // Skip if already synced (scoped to workspace)
-        if ($messageIdHeader && Message::where('message_id_header', $messageIdHeader)
+        if ($messageIdHeader && Message::withoutGlobalScopes()->whereIn('message_id_header', [$messageIdHeader, trim($messageIdHeader, '<>')])
                 ->where('workspace_id', $account->workspace_id)->exists()) {
             return false;
         }

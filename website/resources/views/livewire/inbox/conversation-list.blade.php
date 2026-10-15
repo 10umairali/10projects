@@ -184,7 +184,7 @@
     @endif
 
     {{-- Conversation Cards --}}
-    <div class="flex-1 overflow-y-auto hide-scroll p-4 space-y-6"
+    <div class="flex-1 overflow-y-auto p-1 space-y-1"
          x-data
          @scroll.debounce.200ms="if ($el.scrollTop + $el.clientHeight >= $el.scrollHeight - 100) { $wire.loadMore() }">
 
@@ -212,7 +212,7 @@
 
             <div wire:key="conv-{{ $conv['id'] }}"
                  wire:click="selectConversation({{ $conv['id'] }})"
-                 class="p-3.5 rounded-xl transition cursor-pointer mb-1.5
+                 class="px-3 py-2 rounded-lg transition cursor-pointer mb-0.5
                  {{ $isActive
                      ? 'bg-[#3b82f6] text-white shadow-lg'
                      : 'bg-white/[0.03] border border-white/[0.03] hover:border-white/10' }}">
@@ -233,10 +233,10 @@
                         </button>
 
                         @php
-                            $avatarColors = ['bg-pink-500/20 text-pink-400', 'bg-blue-500/20 text-blue-400', 'bg-emerald-500/20 text-emerald-400', 'bg-amber-500/20 text-amber-400', 'bg-violet-500/20 text-violet-400', 'bg-rose-500/20 text-rose-400', 'bg-cyan-500/20 text-cyan-400', 'bg-indigo-500/20 text-indigo-400'];
+                            $avatarColors = ['bg-pink-700 text-white', 'bg-blue-700 text-white', 'bg-emerald-700 text-white', 'bg-amber-700 text-white', 'bg-violet-700 text-white', 'bg-rose-700 text-white', 'bg-cyan-700 text-white', 'bg-indigo-700 text-white'];
                             $colorIndex = $conv['id'] % count($avatarColors);
                         @endphp
-                        <div class="w-11 h-11 rounded border border-white/10 shrink-0 flex items-center justify-center text-xs font-bold
+                        <div class="w-9 h-9 rounded-full border border-white/10 shrink-0 flex items-center justify-center text-lg font-bold
                              {{ $isActive ? 'bg-white/20 text-white border-white/20' : $avatarColors[$colorIndex] }}
                              {{ $isSelected ? 'opacity-0' : '' }}">
                             {{ $conv['contact_initials'] }}
@@ -260,14 +260,14 @@
                         @endif
 
                         {{-- Preview --}}
-                        <p class="text-[11px] mt-0.5 leading-snug line-clamp-2 {{ $isActive ? 'text-white/80' : 'text-gray-400' }}">
+                        <p class="text-xs mt-0.5 leading-snug truncate {{ $isActive ? 'text-white/80' : 'text-gray-400' }}">
                             {{ $conv['preview'] }}
                         </p>
                     </div>
                 </div>
 
                 {{-- Footer: timestamp, counts, tags --}}
-                <div class="mt-3 flex items-center justify-between">
+                <div class="mt-1 flex items-center justify-between">
                     <div class="flex items-center gap-2 {{ $isActive ? 'text-white/70' : 'text-gray-500/80' }}">
                         <span class="text-[11px] font-semibold tracking-wide">{{ $conv['time'] }}</span>
 

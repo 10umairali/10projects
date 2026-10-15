@@ -232,7 +232,7 @@ class FcmPush
                         ];
                         $message['apns'] = [
                             'headers' => ['apns-priority' => '10', 'apns-push-type' => 'alert'],
-                            'payload' => ['aps' => array_filter(['sound' => 'default', 'thread-id' => $opts['thread'] ?? null, 'mutable-content' => 1, 'category' => isset($data['reply_kind']) ? 'MESSAGE_REPLY' : 'MESSAGE_VIEW'])],
+                            'payload' => ['aps' => array_filter(['sound' => 'default', 'thread-id' => $opts['thread'] ?? null, 'mutable-content' => 1, 'category' => isset($data['reply_kind']) ? (($data['type'] ?? '') === 'chat' && version_compare(explode('+', $d->app_version ?? '0')[0], '1.0.13', '>=') ? 'CHAT_REPLY' : 'MESSAGE_REPLY') : 'MESSAGE_VIEW'])],
                         ];
                         if (($d->platform ?? '') === 'ios' && version_compare(explode('+', $d->app_version ?? '0')[0], '1.0.2', '>=')) {
                             // Match flutter_local_notifications' remote action envelope.

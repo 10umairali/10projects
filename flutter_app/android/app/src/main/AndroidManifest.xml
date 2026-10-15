@@ -33,7 +33,7 @@
     <application
         android:label="Dahimail"
         android:name="${applicationName}"
-        android:icon="@mipmap/ic_launcher"
+        android:icon="@mipmap/ic_dahimail_launcher"
         android:allowBackup="false"
         android:usesCleartextTraffic="false"
         android:enableOnBackInvokedCallback="true">

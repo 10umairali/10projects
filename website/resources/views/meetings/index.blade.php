@@ -27,7 +27,7 @@
             </div>
         </div>
 
-        <details class="bg-surface-2 rounded-2xl border border-border p-5" @if($errors->any()) open @endif>
+        <details class="bg-surface-2 rounded-2xl border border-border p-5" @if($errors->any() || request()->filled('invite_user_id')) open @endif>
             <summary class="font-medium text-ink cursor-pointer">{{ __('Schedule a meeting') }}</summary>
             <form method="POST" action="{{ url('/meetings') }}" class="mt-4 space-y-4">
                 @csrf
@@ -43,7 +43,7 @@
                         <label class="block text-xs text-muted mb-1">{{ __('Invite friends and teammates') }}</label>
                         <div class="max-h-44 overflow-y-auto rounded-xl border border-border divide-y divide-border">
                             @foreach($people as $p)
-                                <label class="flex items-center gap-3 px-3 py-2 cursor-pointer"><input type="checkbox" name="invitees[]" value="{{ $p['id'] }}"><span class="text-sm text-ink">{{ $p['name'] }}</span></label>
+                                <label class="flex items-center gap-3 px-3 py-2 cursor-pointer"><input type="checkbox" name="invitees[]" value="{{ $p['id'] }}" @checked(in_array($p['id'], old('invitees', [(int) request('invite_user_id')])) )><span class="text-sm text-ink">{{ $p['name'] }}</span></label>
                             @endforeach
                         </div>
                     </div>

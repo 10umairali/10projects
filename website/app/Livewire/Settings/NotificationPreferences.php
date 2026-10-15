@@ -13,6 +13,12 @@ class NotificationPreferences extends Component
     public array $events = [];
 
     private const DEFAULTS = [
+        'announcement_general' => ['email' => true, 'inApp' => true, 'slack' => false],
+        'announcement_system' => ['email' => true, 'inApp' => true, 'slack' => false],
+        'announcement_marketing' => ['email' => true, 'inApp' => true, 'slack' => false],
+        'announcement_advertising' => ['email' => true, 'inApp' => true, 'slack' => false],
+        'announcement_misc' => ['email' => true, 'inApp' => true, 'slack' => false],
+
         'newConversation' => ['email' => true, 'inApp' => true, 'slack' => false],
         'assignment' => ['email' => true, 'inApp' => true, 'slack' => false],
         'aiDraftReady' => ['email' => false, 'inApp' => true, 'slack' => false],
@@ -30,7 +36,7 @@ class NotificationPreferences extends Component
         $this->emailNotifs = $prefs['emailNotifs'] ?? true;
         $this->inAppNotifs = $prefs['inAppNotifs'] ?? true;
         $this->slackNotifs = $prefs['slackNotifs'] ?? false;
-        $this->events = $prefs['events'] ?? self::DEFAULTS;
+        $this->events = array_replace_recursive(self::DEFAULTS, $prefs['events'] ?? []);
     }
 
     public function save(): void

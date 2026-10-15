@@ -1,3 +1,4 @@
+import '../core/utility_notice.dart';
 import 'dart:async';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
@@ -76,11 +77,11 @@ class _MeetingRoomPageState extends State<MeetingRoomPage> {
       _closing = true;
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted || _minimizing) return;
-        final messenger = ScaffoldMessenger.maybeOf(context);
+        final noticeContext = Navigator.of(context, rootNavigator: true).context;
         final route = ModalRoute.of(context);
         Navigator.of(context).popUntil((candidate) => candidate == route || candidate.isFirst);
         Navigator.of(context).pop();
-        if (_e.message != null) messenger?.showSnackBar(SnackBar(content: Text(_e.message!)));
+        if (_e.message != null) UtilityNotice.show(noticeContext, _e.message!);
       });
     }
     if (_e.chatOpen) {

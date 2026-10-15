@@ -50,8 +50,8 @@ class FriendService
     /** every user who already has a request with $u (either direction), was dismissed, or was already told about */
     private function relatedIds(User $u): array
     {
-        return FriendRequest::where('requester_id', $u->id)->where('status', '!=', 'unfriended')->pluck('addressee_id')
-            ->merge(FriendRequest::where('addressee_id', $u->id)->where('status', '!=', 'unfriended')->pluck('requester_id'))
+        return FriendRequest::where('requester_id', $u->id)->whereNotIn('status', ['unfriended', 'declined'])->pluck('addressee_id')
+            ->merge(FriendRequest::where('addressee_id', $u->id)->whereNotIn('status', ['unfriended', 'declined'])->pluck('requester_id'))
             ->merge(DB::table('friend_dismissals')->where('user_id', $u->id)->pluck('other_user_id'))
             ->unique()->values()->all();
     }
@@ -112,7 +112,7 @@ class FriendService
         foreach ($users as $v) {
             if (!$this->phones->canDiscover($v)) continue;
             $relation = $relations->get($v->id);
-            if ($relation && in_array($relation->status, ['blocked', 'declined'], true)) continue;
+            if ($relation && $relation->status === 'blocked') continue;
             $out[] = $this->person($u, $v, [
                 'phone_key' => $v->phone_key, 'relation' => $relation?->status ?? 'none',
                 'request_id' => $relation?->id,
@@ -120,6 +120,19 @@ class FriendService
         }
         Cache::put("friend_candidates:{$u->id}", array_values(array_unique(array_merge((array) Cache::get("friend_candidates:{$u->id}", []), array_column($out, 'id')))), now()->addHour());
         return $out;
+    }
+
+    /** Accepted friends only, including friends without any conversation yet. */
+    public function chatContacts(User $viewer): array
+    {
+        $friends = FriendRequest::with(['requester', 'addressee'])->where('status', 'accepted')
+            ->where(fn ($q) => $q->where('requester_id', $viewer->id)->orWhere('addressee_id', $viewer->id))->get()
+            ->map(function ($request) use ($viewer) {
+                $person = (int) $request->requester_id === (int) $viewer->id ? $request->addressee : $request->requester;
+                return $person && $person->status === 'active' ? $this->person($viewer, $person) : null;
+            })->filter()->unique('id')->values()->all();
+        usort($friends, fn ($a, $b) => strnatcasecmp($a['name'], $b['name']) ?: $a['id'] <=> $b['id']);
+        return $friends;
     }
 
     public function overview(User $u): array
@@ -167,8 +180,8 @@ class FriendService
             if ($existing->status === 'accepted') return [false, 'You are already friends.'];
             if ($existing->status === 'pending' && (int) $existing->addressee_id === $from->id) return $this->respond($from, $existing->id, 'accept'); // they asked first
             if ($existing->status === 'pending') return [false, 'Your request is already waiting for an answer.'];
-            if ($existing->status === 'unfriended') $former = $existing;          // former friends may ask again
-            else return [false, 'This request cannot be sent.']; // declined / blocked: no details on purpose
+            if (in_array($existing->status, ['unfriended', 'declined'], true)) $former = $existing;          // former friends may ask again
+            else return [false, 'This request cannot be sent.']; // blocked: no details on purpose
         }
         $known = array_column($this->suggestionsFor($from), 'id');
         $searched = Cache::has("fsearch:{$from->id}:{$toId}");               // the person was just found with the search box
@@ -200,6 +213,7 @@ class FriendService
         if ($action === 'decline') {
             $r->update(['status' => 'declined', 'responded_at' => now()]);
             $this->event($r->requester_id, $u->id, $u->id, 'declined');
+            User::find($r->requester_id)?->notify(FriendNotification::declined($u->name, $u->avatar_path ? asset('storage/'.$u->avatar_path) : ''));
             return [true, 'Request declined.'];
         }
         if ($action === 'block') {

@@ -34,3 +34,22 @@
 .messenger .fc-bubble { background:var(--color-chat-received,#fff); color:var(--color-ink,#18212f); border:1px solid var(--color-border,#e2e5e9); }
 .messenger .fc-row.mine .fc-bubble { background:var(--color-chat-sent,#e0eaf2); color:var(--color-ink,#18212f); }
 .messenger-empty > svg { color:var(--color-muted,#687386); }
+/* Compact, readable conversation list with persistent selection controls. */
+.messenger-sidebar-header{padding:.75rem 1rem}.messenger-discovery{padding:0 .75rem .65rem}.messenger-directory{padding:0}.messenger-eyebrow{display:none}
+.messenger-find{padding:.65rem!important;min-height:44px!important}.messenger-find small{display:none}
+.chat-folders,.chat-selection{display:flex;align-items:center;gap:.3rem;padding:.5rem .65rem;border-bottom:1px solid var(--color-border);min-height:48px}
+.chat-folders button{padding:.35rem .75rem;border-radius:999px;font-size:.8rem}.chat-folders [aria-pressed=true]{background:#dbeafe;color:#1e40af}.chat-selection .messenger-icon{width:32px;height:36px}
+.chat-list-row{display:flex;align-items:center;gap:.35rem;padding:0 .65rem;border-bottom:1px solid var(--color-border)}.chat-list-row:hover,.chat-list-row.is-selected{background:var(--color-control)}
+.chat-list-row input{width:16px;height:16px;accent-color:#2563eb;flex-shrink:0}.chat-list-link{display:flex;gap:.65rem;align-items:center;min-width:0;flex:1;padding:.65rem 0;min-height:68px;color:inherit;text-decoration:none}
+.chat-list .messenger-avatar{width:40px;height:40px;background:#dbeafe;color:#1e40af;font-size:20px;font-weight:700}
+.chat-selection-menu{position:absolute;right:0;top:100%;z-index:30;min-width:160px;padding:.4rem;background:var(--color-surface-2);border:1px solid var(--color-border);border-radius:.6rem;box-shadow:0 8px 24px #0002}
+.chat-selection-menu a,.chat-selection-menu button{display:block;width:100%;text-align:left;padding:.5rem;font-size:.85rem}.chat-selection-menu button:hover,.chat-selection-menu a:hover{background:var(--color-control)}
+@media(max-width:800px){.messenger-directory{padding:0}.messenger-sidebar-header{padding:.65rem .8rem}}
+
+/* Readable initials on every theme; independent of inherited link colors. */
+.messenger-avatar,.chat-list .messenger-avatar{background:#dbeafe;color:#1e3a8a!important;font-size:20px;font-weight:700}
+.chat-archive-row{display:flex;align-items:center;gap:16px;width:100%;padding:12px 22px;border-bottom:1px solid var(--color-border,#e2e8f0);color:var(--color-ink,#172033);font-size:14px}.chat-archive-row span:nth-child(2){flex:1;text-align:left}.chat-archive-row:hover{background:var(--color-control,#f1f5f9)}
+
+.chat-picker-letter{padding:.5rem 1rem;font-size:.75rem;font-weight:700;color:var(--color-muted);background:var(--color-control)}
+.chat-picker-person{display:flex;gap:.75rem;align-items:center;padding:.75rem 1rem;min-height:64px;border-bottom:1px solid var(--color-border);color:inherit;text-decoration:none}
+.chat-picker-person:hover,.chat-picker-person:focus-visible{background:var(--color-control)}

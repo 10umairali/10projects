@@ -4,6 +4,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:workmanager/workmanager.dart';
 import 'api.dart';
+import 'mail_sync.dart';
 import 'device_contacts_sync.dart';
 import 'session.dart';
 
@@ -29,6 +30,8 @@ void syncDispatcher() {
       }
       Api.persistenceGuard = active;
       await Api.initCache(scope);
+      // Mail must sync even when contact permission/directory refresh fails.
+      await MailSync.sync(session, stillActive: active);
       await DeviceContactsSync.I.restore(session);
       // Local contacts first; optional directory matching uses only phone keys.
       await DeviceContactsSync.I.sync(force: true, stillActive: active);

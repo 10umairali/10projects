@@ -8,7 +8,7 @@ use Illuminate\Support\Facades\DB;
 
 /**
  * "People": everyone you can talk to inside the platform – friends and the members of your workspace – and their profiles.
- * A profile can be opened only for a friend or a teammate.
+ * Discovered nonfriends expose only the identity already shown in suggestions.
  */
 class PeopleService
 {
@@ -57,7 +57,7 @@ class PeopleService
         return $d;
     }
 
-    /** @return array<string,mixed> profile of a friend or teammate (404 for anybody else) */
+    /** @return array<string,mixed> full related profile or limited discovered identity */
     public function profile(User $me, int $id): array
     {
         abort_if($id === $me->id, 404);
@@ -71,7 +71,23 @@ class PeopleService
             ->first(['b.role', 'b.status as presence', 'b.last_active_at']);
         $formerRow = DB::table('friend_requests')->where('status', '!=', 'accepted')->where(fn ($q) => $q->where('status', 'unfriended')->orWhereNotNull('unfriended_at'))
             ->where(fn ($q) => $q->where(fn ($w) => $w->where('requester_id', $me->id)->where('addressee_id', $id))->orWhere(fn ($w) => $w->where('requester_id', $id)->where('addressee_id', $me->id)))->first();
-        abort_unless($friendRow || $teamRow || $formerRow, 404);
+        if (!$friendRow && !$teamRow && !$formerRow) {
+            $request = DB::table('friend_requests')->where(fn ($q) => $q
+                ->where(fn ($w) => $w->where('requester_id', $me->id)->where('addressee_id', $id))
+                ->orWhere(fn ($w) => $w->where('requester_id', $id)->where('addressee_id', $me->id)))->first();
+            $found = app(FriendFinder::class)->canFind($me, $x)
+                || in_array($id, (array) \Illuminate\Support\Facades\Cache::get("friend_candidates:{$me->id}", []), true)
+                || in_array($id, array_column($this->friends->suggestionsFor($me), 'id'), true)
+                || ($request && $request->status === 'pending');
+            abort_unless($found && (!$request || $request->status !== 'blocked'), 404);
+            return [
+                ...app(ContactNames::class)->fields($me, $x), 'id' => $x->id,
+                'username' => \App\Support\Username::plain($x->username), 'avatar_url' => $this->avatar($x),
+                'is_friend' => false, 'is_team' => false, 'is_former' => false, 'can_talk' => false,
+                'friend_request_status' => $request?->status,
+                'request_sent_by_me' => $request && (int) $request->requester_id === (int) $me->id,
+            ];
+        }
 
         $tz = $x->timezone ?: 'UTC';
         try { $local = Carbon::now($tz)->format('H:i'); } catch (\Throwable $e) { $local = null; $tz = null; }

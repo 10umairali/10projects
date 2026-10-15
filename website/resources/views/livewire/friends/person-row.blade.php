@@ -2,7 +2,7 @@
 {{-- one person: photo, name (opens the profile), type, and the ways to reach them. NO remove button here – it is on the profile. --}}
 <div class="bg-surface-2 rounded-2xl border border-border p-4 flex flex-wrap items-center gap-3">
     <a href="{{ (!empty($p['username']) ? url('/people/u/' . rawurlencode($p['username'])) : url('/people/' . $p['id'])) }}" class="flex items-center gap-3 min-w-0 flex-1 group">
-        <div class="w-12 h-12 rounded-full bg-brand/10 text-brand flex items-center justify-center font-semibold flex-shrink-0 overflow-hidden relative">
+        <div class="w-12 h-12 rounded-full profile-initial flex items-center justify-center font-semibold flex-shrink-0 overflow-hidden relative">
             @if($p['avatar_url'])<img src="{{ $p['avatar_url'] }}" alt="" class="w-full h-full object-cover">@else{{ strtoupper(mb_substr($p['name'], 0, 1)) }}@endif
         </div>
         <div class="min-w-0">
@@ -29,6 +29,7 @@
         <button type="button" onclick="window.FriendCall && window.FriendCall.start({{ $p['id'] }}, @js($p['name']))" class="btn-secondary" title="{{ __('Call') }}" aria-label="{{ __('Call') }}"><x-action-icon name="phone" /></button>
         <button type="button" onclick="window.FriendCall && window.FriendCall.startVideo({{ $p['id'] }}, @js($p['name']))" class="btn-secondary" title="{{ __('Video') }}" aria-label="{{ __('Video') }}"><x-action-icon name="video" /></button>
     @endif
+    @if($can && empty($p['is_former']))<a href="{{ url('/meetings').'?invite_user_id='.$p['id'] }}" class="btn-secondary" title="{{ __('Meeting') }}" aria-label="{{ __('Meeting') }}"><x-action-icon name="calendar" /></a>@endif
     <a href="mailto:{{ $p['email'] ?? '' }}" class="btn-secondary" title="{{ __('Email') }}" aria-label="{{ __('Email') }}"><x-action-icon name="mail" /></a>
     <a href="{{ (!empty($p['username']) ? url('/people/u/' . rawurlencode($p['username'])) : url('/people/' . $p['id'])) }}" class="text-xs text-muted hover:text-ink">{{ __('Profile') }}</a>
 </div>

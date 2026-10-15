@@ -1,3 +1,4 @@
+import 'utility_notice.dart';
 import 'dart:async';
 import 'dart:math' as math;
 import 'dart:io' show Platform;
@@ -239,7 +240,7 @@ class RoomHost extends ChangeNotifier with WidgetsBindingObserver {
     e.dispose();
     if (message != null) {
       final ctx = rootNavKey.currentContext;
-      if (ctx != null) ScaffoldMessenger.maybeOf(ctx)?.showSnackBar(SnackBar(content: Text(message)));
+      if (ctx != null) UtilityNotice.show(ctx, message);
     }
   }
 }

@@ -164,6 +164,12 @@
     @case('pin')
         <svg {{ $attributes }} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z"/></svg>
         @break
+    @case('bell-off')
+        <svg {{ $attributes }} fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path d="m3 3 18 18M10 21h4M6 6a6 6 0 0 0 0 5c0 4-3 6-3 6h14M10 3a6 6 0 0 1 8 6v3"/></svg>
+        @break
+    @case('arrow-left')
+        <svg {{ $attributes }} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 12H5m7-7-7 7 7 7"/></svg>
+        @break
     @case('archive')
         <svg {{ $attributes }} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4"/></svg>
         @break

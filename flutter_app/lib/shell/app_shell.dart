@@ -1,9 +1,11 @@
 import 'dart:async';
+import '../core/conversation_header.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../core/api.dart';
 import '../core/background_sync.dart';
+import '../core/mail_sync.dart';
 import '../core/device_contacts_sync.dart';
 import '../core/brand.dart';
 import '../core/calls.dart';
@@ -44,7 +46,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver impleme
   ShellMode _mode = ShellMode.social;
   late Dest _dest = defaultDest(ShellMode.social);
   int _unread = 0;
-  Timer? _timer;
+  Timer? _timer, _mailTimer;
   // Back-button history: every screen you open is remembered so Back returns to the previous one.
   final List<(ShellMode, Dest)> _history = [];
   // Screens stay alive once opened, so coming back is instant and keeps scroll position and typed text.
@@ -72,6 +74,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver impleme
   @override
   void initState() {
     super.initState();
+    ConversationHeader.states.addListener(_selectionChanged);
     NotifyService.I.tapped.addListener(_openNotifications);
     WidgetsBinding.instance.addObserver(this);
     PeoplePage.filter.addListener(_filterChanged);
@@ -82,6 +85,11 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver impleme
       CallKitBridge.init();
       if (NotifyService.I.pendingCallAction == null && NotifyService.I.pendingNotification != null) _openNotifications();
       _pollUnread();
+      MailSync.sync(context.read<Session>());
+      _mailTimer = Timer.periodic(const Duration(seconds: 10), (_) {
+        if (!mounted || WidgetsBinding.instance.lifecycleState != AppLifecycleState.resumed) return;
+        MailSync.sync(context.read<Session>()).then((_) { if (mounted) _pollUnread(); });
+      });
       _timer = Timer.periodic(const Duration(seconds: 60), (_) {
         if (!mounted || WidgetsBinding.instance.lifecycleState != AppLifecycleState.resumed) return;
         _pollUnread();
@@ -114,6 +122,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver impleme
     if (s == AppLifecycleState.paused) _pausedAt = DateTime.now();
     if (s == AppLifecycleState.resumed && mounted) {
       context.read<Session>().refreshMe();
+      MailSync.sync(context.read<Session>());
       Api.reloadBackground().then((_) { if (mounted) AppRefresh.bump(); });
       DeviceContactsSync.I.restore(context.read<Session>()).then((_) => DeviceContactsSync.I.sync());
       AppPermissions.setupAfterSignIn(context);
@@ -135,12 +144,14 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver impleme
   @override
   void dispose() {
     _timer?.cancel();
+    _mailTimer?.cancel();
     NotifyService.I.tapped.removeListener(_openNotifications);
     PeoplePage.filter.removeListener(_filterChanged);
     PeoplePage.openTeam = null;
     WidgetsBinding.instance.removeObserver(this);
     CallManager.I.detach();
     DeviceContactsSync.I.detach();
+    ConversationHeader.states.removeListener(_selectionChanged);
     super.dispose();
   }
 
@@ -249,6 +260,8 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver impleme
           _scaffold.currentState?.closeDrawer();
         } else if (_scaffold.currentState?.isEndDrawerOpen ?? false) {
           _scaffold.currentState?.closeEndDrawer();
+        } else if ((_mode == ShellMode.social || _mode == ShellMode.inbox) && ConversationHeader.states.value[_dest.id] != null) {
+          ConversationHeader.states.value[_dest.id]!.back();
         } else if (_history.isNotEmpty) {
           _back();
         } else {
@@ -370,6 +383,8 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver impleme
     return null;
   }
 
+  void _selectionChanged() { if (mounted) setState(() {}); }
+
   void _openAccount() => _scaffold.currentState?.openEndDrawer();
 
   /// Top-left title: the brand name on every main tab (Chats, Mail, Friends, Workspace). A Workspace page keeps its own name next to the
@@ -381,6 +396,12 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver impleme
   }
 
   PreferredSizeWidget _header(Session s, bool wide) {
+    final selection = (_mode == ShellMode.social || _mode == ShellMode.inbox) ? ConversationHeader.states.value[_dest.id] : null;
+    if (selection != null) { return AppBar(
+      leading: IconButton(tooltip: 'Back', icon: const Icon(Icons.arrow_back_rounded), onPressed: selection.back),
+      title: Text(selection.title), titleSpacing: 0,
+      actions: [selection.actions],
+    ); }
     return AppBar(
       automaticallyImplyLeading: false,
       // No side menu any more: everything is in the Workspace tab. Back arrow on a Workspace detail page.

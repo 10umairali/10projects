@@ -1,7 +1,7 @@
 name: dahimail
 description: Dahimail mobile app.
 publish_to: 'none'
-version: 1.0.12+1
+version: 1.0.15+4
 
 environment:
   sdk: '>=3.3.0 <4.0.0'
@@ -72,7 +72,7 @@ flutter:
 
 
 flutter_launcher_icons:
-  android: true
+  android: ic_dahimail_launcher
   ios: true
   image_path: assets/icon/icon.png
   adaptive_icon_background: "#2563EB"

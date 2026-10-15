@@ -1,12 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'api.dart';
+import 'refresh.dart';
+import 'package:flutter_widget_from_html/flutter_widget_from_html.dart';
 import 'notification_actions.dart';
 import 'notification_presentation.dart';
 import '../screens/friend_chat_page.dart';
 import '../screens/inbox_screens.dart';
 import 'room_entry.dart';
 import '../screens/friends_screens.dart';
+import '../screens/friend_requests_page.dart';
 import '../screens/friend_widget_page.dart';
 import '../screens/meetings_screens.dart';
 import 'widgets.dart';
@@ -14,6 +17,9 @@ import 'util.dart';
 
 class NotificationNavigation {
   static Future<void> open(BuildContext context, Map data) async {
+    if (data['notification_action'] == 'view') { await view(context, data); return; }
+    if (data['notification_action'] == 'reply') { await reply(context, data); return; }
+    if (data['notification_action'] == 'read') { await markRead(context, data); return; }
     if (data['type'] == 'home_friend_setup') {
       final id = int.tryParse('${data['widget_id']}');
       if (id != null && id > 0) await pushPage(context, FriendWidgetPage(widgetId: id));
@@ -53,7 +59,7 @@ class NotificationNavigation {
       page = const AppPage(title: 'Phone & discovery', body: PhoneDiscoveryPage());
     } else if (type.startsWith('friend') && !type.contains('meeting')) {
       page = type == 'friend_request'
-          ? const AppPage(title: 'Friend requests', body: FriendsPage(initialTab: 1))
+          ? const FriendRequestsPage()
           : const AppPage(title: 'Friends', body: FriendsPage());
     } else if (friend != null && friend > 0 && (type == 'chat' || type.contains('call'))) {
       page = FriendChatPage(friend: {'id': friend, 'name': NotificationPresentation.sender(data), 'avatar_url': NotificationPresentation.avatar(data)}, features: const {'chat': true, 'files': true, 'calls': true, 'max_mb': 10});
@@ -93,6 +99,58 @@ class NotificationNavigation {
     }
   }
 
+  static Future<void> markRead(BuildContext context, Map data) async {
+    final api = Api.of(context);
+    final client = http.Client();
+    bool ok;
+    try { ok = await markNotificationRead({...data, 'recipient_user_id': data['recipient_user_id'] ?? api.session.userId},
+      token: api.session.token ?? '', userId: api.session.userId ?? 0, client: client); }
+    finally { client.close(); }
+    if (ok) AppRefresh.bump();
+    if (context.mounted) toast(context, ok ? 'Marked as read' : 'Could not mark as read. Open the chat to try again.', error: !ok);
+  }
+
+  static Future<void> view(BuildContext context, Map data) async {
+    final api = Api.of(context);
+    final recipient = int.tryParse('${data['recipient_user_id']}');
+    if (recipient != null && recipient != api.session.userId) return;
+    final target = NotificationTarget.from(data);
+    if (target == null) { await open(context, {...data, 'notification_action': null}); return; }
+    final future = () async {
+      if (target.kind == 'friend') {
+        final result = await api.getNoCache('friends/${target.id}/messages', query: {'mark_read': '0'});
+        return <String, dynamic>{'messages': Api.list(result)};
+      }
+      final result = await api.getNoCache('inbox/conversations/${target.id}/messages', query: {'mark_read': '0'});
+      final messages = result is Map ? Api.list(result['messages']) : <Map<String, dynamic>>[];
+      if (messages.isEmpty) return <String, dynamic>{'messages': messages};
+      final id = int.tryParse('${data['message_id']}');
+      final message = messages.firstWhere((m) => m['id'] == id, orElse: () => messages.last);
+      final body = Api.obj(await api.getNoCache('inbox/messages/${message['id']}/body'));
+      return <String, dynamic>{'html': body['html'], 'text': body['text'] ?? message['body_text']};
+    }();
+    await showModalBottomSheet<void>(context: context, isScrollControlled: true, showDragHandle: true,
+      builder: (sheet) => SafeArea(child: SizedBox(height: MediaQuery.sizeOf(sheet).height * .78,
+        child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          Padding(padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8), child: Text(NotificationPresentation.sender(data), style: Theme.of(sheet).textTheme.titleLarge)),
+          Expanded(child: FutureBuilder<Map<String, dynamic>>(future: future, builder: (c, snapshot) {
+            if (snapshot.hasError) return const Center(child: Text('Could not load this message. Open the conversation to retry.'));
+            if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
+            final value = snapshot.data!;
+            return SingleChildScrollView(padding: const EdgeInsets.all(20), child:
+              '${value['html'] ?? ''}'.isNotEmpty ? HtmlWidget('${value['html']}') :
+              SelectableText(value['messages'] is List
+                ? (value['messages'] as List).map((m) => '${m['mine'] == true ? 'You' : NotificationPresentation.sender(data)}: ${m['body'] ?? m['preview'] ?? m['file']?['name'] ?? ''}').join('\n\n')
+                : '${value['text'] ?? data['body'] ?? ''}', style: const TextStyle(fontSize: 16, height: 1.5)));
+          })),
+          Padding(padding: const EdgeInsets.all(12), child: Wrap(spacing: 8, children: [
+            FilledButton.icon(icon: const Icon(Icons.reply), label: const Text('Reply'), onPressed: () async { Navigator.pop(sheet); await reply(context, data); }),
+            if (data['type'] == 'chat' && data['message_id'] != null) OutlinedButton(onPressed: () async { Navigator.pop(sheet); await markRead(context, data); }, child: const Text('Mark as read')),
+            TextButton(onPressed: () async { Navigator.pop(sheet); await open(context, {...data, 'notification_action': null}); }, child: const Text('Open conversation')),
+          ])),
+        ]))));
+  }
+
   static Future<void> reply(BuildContext context, Map data) async {
     if (NotificationTarget.from(data) == null) return;
     final api = Api.of(context);
@@ -128,7 +186,7 @@ class _NotificationReplySheetState extends State<_NotificationReplySheet> {
         token: widget.api.session.token ?? '', userId: widget.api.session.userId ?? 0, client: client);
     } finally { client.close(); }
     if (!mounted) return;
-    if (sent) { Navigator.pop(context); }
+    if (sent) { AppRefresh.bump(); Navigator.pop(context); }
     else { setState(() { sending = false; error = 'Reply not confirmed. Check the conversation before trying again.'; }); }
   }
 

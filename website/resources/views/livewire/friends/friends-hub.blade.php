@@ -25,17 +25,20 @@
     @endif
 
     <div class="messenger-filters flex flex-wrap gap-1 border-b border-border">
-        @foreach(['all' => [__('All'), count($everyone)], 'friends' => [__('Friends'), count($friendList)], 'team' => [__('Team'), count($data['team'] ?? [])], 'requests' => [__('Requests'), count($data['incoming'] ?? [])], 'suggestions' => [__('Suggestions'), count($data['suggestions'] ?? [])], 'former' => [__('Former'), count($data['former'] ?? [])]] as $key => [$label, $count])
+        @foreach(['all' => [__('All'), count($everyone)], 'friends' => [__('Friends'), count($friendList)], 'team' => [__('Team'), count($data['team'] ?? [])], 'requests' => [__('Received requests'), count($data['incoming'] ?? [])], 'sent' => [__('Sent requests'), count($data['outgoing'] ?? [])], 'find' => [__('Find people'), 0], 'suggestions' => [__('Suggestions'), count($data['suggestions'] ?? [])], 'former' => [__('Former'), count($data['former'] ?? [])]] as $key => [$label, $count])
             <button type="button" wire:click="setTab('{{ $key }}')" class="px-4 py-2.5 text-sm font-medium -mb-px border-b-2 {{ $tab === $key ? 'border-brand text-brand' : 'border-transparent text-muted hover:text-ink' }}">
-                {{ $label }} @if($count > 0)<span class="ml-1 text-xs rounded-full bg-brand/10 text-brand px-2 py-0.5">{{ $count }}</span>@endif
+                {{ $label }} @if($count > 0)<span class="ml-1 text-xs rounded-full profile-initial px-2 py-0.5">{{ $count }}</span>@endif
             </button>
         @endforeach
         <a href="{{ url('/contacts') }}" class="px-4 py-2.5 text-sm font-medium -mb-px border-b-2 border-transparent text-muted hover:text-ink">{{ __('Customers') }} &rarr;</a>
     </div>
 
+    @if(in_array($tab, ['requests', 'sent']))<h2 class="text-lg font-semibold">{{ $tab === 'requests' ? __('Received requests') : __('Sent requests') }} @php($requestCount = count($data[$tab === 'requests' ? 'incoming' : 'outgoing'] ?? [])) @if($requestCount)<span class="text-sm">({{ $requestCount }})</span>@endif</h2>@endif
     @php($row = 'bg-surface-2 rounded-2xl border border-border p-4 flex flex-wrap items-center gap-4')
     <div class="space-y-3">
-    @if($tab === 'all')
+    @if($tab === 'find')
+        @include('friends._search')
+    @elseif($tab === 'all')
         @forelse($everyone as $p)@include($compact ? 'livewire.friends.chat-row' : 'livewire.friends.person-row', ['p' => $p])@empty
             <div class="text-center text-sm text-muted py-12">{{ __('Nobody here yet. Find friends under Suggestions, or invite teammates in Settings → Team.') }}</div>
         @endforelse
@@ -55,29 +58,32 @@
     @elseif($tab === 'requests')
         @forelse($data['incoming'] ?? [] as $p)
             <div class="{{ $row }}">
-                <a href="{{ (!empty($p['username']) ? url('/people/u/' . rawurlencode($p['username'])) : url('/people/' . $p['id'])) }}" class="w-11 h-11 rounded-full bg-brand/10 text-brand flex items-center justify-center font-semibold overflow-hidden flex-shrink-0">@if($p['avatar_url'])<img src="{{ $p['avatar_url'] }}" alt="" class="w-full h-full object-cover">@else{{ strtoupper(mb_substr($p['name'], 0, 1)) }}@endif</a>
+                <a href="{{ (!empty($p['username']) ? url('/people/u/' . rawurlencode($p['username'])) : url('/people/' . $p['id'])) }}" class="w-11 h-11 rounded-full profile-initial flex items-center justify-center font-semibold overflow-hidden flex-shrink-0">@if($p['avatar_url'])<img src="{{ $p['avatar_url'] }}" alt="" class="w-full h-full object-cover">@else{{ strtoupper(mb_substr($p['name'], 0, 1)) }}@endif</a>
                 <div class="min-w-0 flex-1"><div class="font-medium text-ink truncate">{{ $p['name'] }}</div><div class="text-xs text-muted">{{ __('Wants to be your friend') }} · {{ $p['when'] }}</div></div>
                 <button type="button" wire:click="respond({{ $p['request_id'] }}, 'block')" wire:confirm="{{ __('Block :n? They will not be able to send you requests.', ['n' => $p['name']]) }}" class="text-xs text-muted hover:text-red-600">{{ __('Block') }}</button>
-                <button type="button" wire:click="respond({{ $p['request_id'] }}, 'decline')" wire:confirm="{{ __('Decline the request from :n? They will not be able to send you another one.', ['n' => $p['name']]) }}" class="btn-secondary">{{ __('Decline') }}</button>
+                <button type="button" wire:click="respond({{ $p['request_id'] }}, 'decline')" wire:confirm="{{ __('Decline the request from :n? They will be notified and can send another request.', ['n' => $p['name']]) }}" class="btn-secondary">{{ __('Decline') }}</button>
                 <button type="button" wire:click="respond({{ $p['request_id'] }}, 'accept')" wire:confirm="{{ __('Accept :n as a friend? They will be able to message and call you and see your email address.', ['n' => $p['name']]) }}" class="btn-primary">{{ __('Accept') }}</button>
             </div>
         @empty
             <div class="text-center text-sm text-muted py-8">{{ __('No friend requests.') }}</div>
         @endforelse
+    @elseif($tab === 'sent')
         @if(!empty($data['outgoing']))
-            <h3 class="text-sm font-semibold text-ink pt-2">{{ __('Sent by you') }}</h3>
+            <h3 class="text-sm font-semibold text-ink pt-2">{{ __('Sent requests') }} ({{ count($data['outgoing']) }})</h3>
             @foreach($data['outgoing'] as $p)
                 <div class="{{ $row }}">
-                    <div class="w-11 h-11 rounded-full bg-brand/10 text-brand flex items-center justify-center font-semibold flex-shrink-0">{{ strtoupper(mb_substr($p['name'], 0, 1)) }}</div>
+                    <div class="w-11 h-11 rounded-full profile-initial flex items-center justify-center font-semibold flex-shrink-0">{{ strtoupper(mb_substr($p['name'], 0, 1)) }}</div>
                     <div class="min-w-0 flex-1"><div class="font-medium text-ink truncate">{{ $p['name'] }}</div><div class="text-xs text-muted">{{ __('Waiting for an answer') }} · {{ $p['when'] }}</div></div>
                     <button type="button" wire:click="cancel({{ $p['request_id'] }})" wire:confirm="{{ __('Cancel your request to :n?', ['n' => $p['name']]) }}" class="btn-secondary">{{ __('Cancel') }}</button>
                 </div>
             @endforeach
+        @else
+            <p class="text-center text-muted py-8">{{ __('No sent requests.') }}</p>
         @endif
     @else
         @forelse($data['suggestions'] ?? [] as $p)
             <div class="{{ $row }}">
-                <div class="w-11 h-11 rounded-full bg-brand/10 text-brand flex items-center justify-center font-semibold flex-shrink-0 overflow-hidden">@if($p['avatar_url'])<img src="{{ $p['avatar_url'] }}" alt="" class="w-full h-full object-cover">@else{{ strtoupper(mb_substr($p['name'], 0, 1)) }}@endif</div>
+                <div class="w-11 h-11 rounded-full profile-initial flex items-center justify-center font-semibold flex-shrink-0 overflow-hidden">@if($p['avatar_url'])<img src="{{ $p['avatar_url'] }}" alt="" class="w-full h-full object-cover">@else{{ strtoupper(mb_substr($p['name'], 0, 1)) }}@endif</div>
                 <div class="min-w-0 flex-1">
                     <div class="font-medium text-ink truncate">{{ $p['name'] }}</div>
                     <div class="text-xs text-muted truncate">@if($p['saved_as']){{ __('Saved in your contacts as :n', ['n' => $p['saved_as']]) }}@else{{ __('Has your number or you have theirs') }}@endif @if(($p['verified'] ?? true) === false) · {{ __('number not verified') }}@endif</div>

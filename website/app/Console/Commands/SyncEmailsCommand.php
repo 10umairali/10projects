@@ -31,7 +31,7 @@ class SyncEmailsCommand extends Command
         if (! $this->option('force')) {
             $query->where(function ($q) {
                 $q->whereNull('last_synced_at')
-                    ->orWhere('last_synced_at', '<=', now()->subMinutes(2));
+                    ->orWhere('last_synced_at', '<=', now()->subSeconds(20));
             });
         }
 

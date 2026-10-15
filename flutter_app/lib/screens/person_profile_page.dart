@@ -7,6 +7,7 @@ import '../core/theme.dart';
 import '../core/util.dart';
 import '../core/widgets.dart';
 import 'compose_page.dart';
+import 'meetings_screens.dart';
 import 'friend_chat_page.dart';
 
 /// Profile of a friend or teammate: photo, name, username, email and details; ways to reach them; chat history options;
@@ -86,6 +87,15 @@ class _PersonProfilePageState extends State<PersonProfilePage> {
     );
   }
 
+  Widget _action(BuildContext context, String label, IconData icon, VoidCallback? onTap) {
+    final colors = Theme.of(context).colorScheme;
+    return Expanded(child: Column(children: [
+      IconButton.filledTonal(tooltip: label, onPressed: onTap, icon: Icon(icon), style: IconButton.styleFrom(minimumSize: const Size(56, 52), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)))),
+      const SizedBox(height: 6),
+      Text(label, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: onTap == null ? colors.onSurface.withValues(alpha: .45) : colors.onSurface)),
+    ]));
+  }
+
   @override
   Widget build(BuildContext context) => Scaffold(
         appBar: AppBar(title: const Text('Profile')),
@@ -98,7 +108,7 @@ class _PersonProfilePageState extends State<PersonProfilePage> {
             final team = p['team'] is Map ? Map<String, dynamic>.from(p['team'] as Map) : null;
             final f = p['features'] is Map ? Map<String, dynamic>.from(p['features'] as Map) : <String, dynamic>{'chat': true, 'files': true, 'calls': true, 'max_mb': 10};
             final isFormer = p['is_former'] == true;
-            final canTalk = (isFriend || isTeam) && f['chat'] != false;
+            final canTalk = (isFriend || isTeam) && p['can_talk'] != false && f['chat'] != false;
             final canRead = (canTalk || isFormer) && f['chat'] != false;     // former friends: read-only history
             final history = Api.list(p['history']);
             return RefreshIndicator(
@@ -117,7 +127,7 @@ class _PersonProfilePageState extends State<PersonProfilePage> {
                       if (isFormer) Chip(avatar: const Icon(Icons.history_rounded, size: 16), label: Text('Unfriended${p['unfriended_on'] != null ? ' · ${p['unfriended_on']}' : ''}'), visualDensity: VisualDensity.compact),
                       if (isTeam) Chip(avatar: const Icon(Icons.groups_rounded, size: 16), label: Text('Team${team?['role'] != null ? ' · ${team!['role']}' : ''}'), visualDensity: VisualDensity.compact),
                     ]),
-                    if (isFormer && p['friend_request_status'] != 'blocked') ...[
+                    if (!isFriend && !isTeam && p['friend_request_status'] != 'blocked') ...[
                       const SizedBox(height: 12),
                       FilledButton.icon(
                         icon: const Icon(Icons.person_add_alt_1_rounded),
@@ -127,31 +137,16 @@ class _PersonProfilePageState extends State<PersonProfilePage> {
                         },
                       ),
                     ],
-                    if (canTalk || canRead || '${p['email'] ?? ''}'.isNotEmpty) ...[
-                      const SizedBox(height: 14),
-                      Wrap(spacing: 8, runSpacing: 8, alignment: WrapAlignment.center, children: [
-                        if (canTalk)
-                          FilledButton.icon(
-                            style: FilledButton.styleFrom(minimumSize: const Size(0, 44)),
-                            icon: const Icon(Icons.chat_bubble_outline_rounded, size: 18),
-                            label: Text(((p['unread'] as int?) ?? 0) > 0 ? 'Chat · ${p['unread']}' : 'Chat'),
-                            onPressed: () => pushPage(c, FriendChatPage(friend: {'id': p['id'], 'name': name, 'avatar_url': p['avatar_url']}, features: f)),
-                          ),
-                        if (isFormer && canRead)
-                          FilledButton.icon(
-                            style: FilledButton.styleFrom(minimumSize: const Size(0, 44)),
-                            icon: const Icon(Icons.history_rounded, size: 18),
-                            label: const Text('Open chat history'),
-                            onPressed: () => pushPage(c, FriendChatPage(friend: {'id': p['id'], 'name': name, 'avatar_url': p['avatar_url'], 'former': true}, features: f)),
-                          ),
-                        if (canTalk && f['calls'] == true)
-                          OutlinedButton.icon(style: OutlinedButton.styleFrom(minimumSize: const Size(0, 44)), icon: const Icon(Icons.call_rounded, size: 18), label: const Text('Call'), onPressed: () => CallManager.I.startCall(c, p['id'] as int)),
-                        if (canTalk && f['calls'] == true)
-                          OutlinedButton.icon(style: OutlinedButton.styleFrom(minimumSize: const Size(0, 44)), icon: const Icon(Icons.videocam_rounded, size: 18), label: const Text('Video'), onPressed: () => CallManager.I.startVideoCall(c, p['id'] as int, name)),
-                        if ('${p['email'] ?? ''}'.isNotEmpty)
-                          OutlinedButton.icon(style: OutlinedButton.styleFrom(minimumSize: const Size(0, 44)), icon: const Icon(Icons.mail_outline_rounded, size: 18), label: const Text('Email'), onPressed: () => pushPage(c, ComposePage(contact: {'email': p['email'], 'first_name': name}))),
-                      ]),
-                    ],
+                    const SizedBox(height: 18),
+                    Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      _action(c, 'Chat', Icons.chat_bubble_outline_rounded, canTalk ? () => pushPage(c, FriendChatPage(friend: {'id': p['id'], 'name': name, 'avatar_url': p['avatar_url']}, features: f)) : null),
+                      _action(c, 'Call', Icons.call_outlined, canTalk && f['calls'] == true ? () => CallManager.I.startCall(c, p['id'] as int) : null),
+                      _action(c, 'Video', Icons.videocam_outlined, canTalk && f['calls'] == true ? () => CallManager.I.startVideoCall(c, p['id'] as int, name) : null),
+                      _action(c, 'Email', Icons.mail_outline_rounded, canTalk && '${p['email'] ?? ''}'.isNotEmpty ? () => pushPage(c, ComposePage(contact: {'email': p['email'], 'first_name': name})) : null),
+                      _action(c, 'Meeting', Icons.event_outlined, canTalk && f['calls'] == true ? () => scheduleMeetingWith(c, p['id'] as int) : null),
+                    ]),
+                    if (!canTalk && !isFormer) const Padding(padding: EdgeInsets.only(top: 14), child: Text('Become friends to chat, call or meet.', textAlign: TextAlign.center, style: TextStyle(color: AppColors.muted))),
+                    if (isFormer && canRead) TextButton.icon(icon: const Icon(Icons.history_rounded), label: const Text('Open chat history'), onPressed: () => pushPage(c, FriendChatPage(friend: {'id': p['id'], 'name': name, 'avatar_url': p['avatar_url'], 'former': true}, features: f))),
                   ]),
                 ),
                 if (isFriend && canTalk && FriendHomeWidget.supported)

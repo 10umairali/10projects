@@ -4,7 +4,7 @@
 
         {{-- header --}}
         <div class="bg-surface-2 rounded-2xl border border-border p-6 flex flex-wrap items-center gap-5">
-            <div class="w-24 h-24 rounded-full bg-brand/10 text-brand flex items-center justify-center text-3xl font-semibold overflow-hidden flex-shrink-0">
+            <div class="w-24 h-24 rounded-full bg-blue-700 text-white flex items-center justify-center text-3xl font-semibold overflow-hidden flex-shrink-0">
                 @if($p['avatar_url'])<img src="{{ $p['avatar_url'] }}" alt="{{ $p['name'] }}" class="w-full h-full object-cover">@else{{ strtoupper(mb_substr($p['name'], 0, 1)) }}@endif
             </div>
             <div class="min-w-0 flex-1">
@@ -18,25 +18,21 @@
             </div>
         </div>
 
-        {{-- ways to reach --}}
-        @if($p['is_friend'] || $p['is_team'])
-            <div class="flex flex-wrap gap-3">
-                @if(\App\Support\FriendSettings::chatEnabled())
-                    <a href="{{ $p['chat_url'] }}" class="btn-primary" title="{{ __('Chat') }}" aria-label="{{ __('Chat') }}"><x-action-icon name="chat" />@if(($p['unread'] ?? 0) > 0)<span class="ml-1 text-xs rounded-full bg-white/25 px-1.5 py-0.5">{{ $p['unread'] }}</span>@endif</a>
+        @php($canTalk = !empty($p['can_talk']))
+        <div class="grid grid-cols-5 gap-1 sm:gap-3" aria-label="{{ __('Contact actions') }}">
+            @foreach([['chat', __('Chat')], ['phone', __('Call')], ['video', __('Video')], ['mail', __('Email')], ['calendar', __('Meeting')]] as [$icon, $label])
+                @php($enabled = $canTalk && ($icon === 'chat' ? \App\Support\FriendSettings::chatEnabled() : ($icon === 'mail' ? !empty($p['email']) : \App\Support\FriendSettings::callsEnabled())))
+                @if(!$enabled)
+                    <button disabled class="flex flex-col items-center gap-2 rounded-2xl border border-border py-3 px-1 min-w-0 opacity-40" aria-label="{{ $label }}"><x-action-icon :name="$icon" /><span class="text-xs">{{ $label }}</span></button>
+                @elseif(in_array($icon, ['phone', 'video']))
+                    <button type="button" class="flex flex-col items-center gap-2 rounded-2xl bg-brand/10 text-brand py-3 px-1 min-w-0 hover:bg-brand/20" onclick="window.FriendCall && window.FriendCall.{{ $icon === 'phone' ? 'start' : 'startVideo' }}({{ $p['id'] }}, @js($p['name']))"><x-action-icon :name="$icon" /><span class="text-xs font-semibold">{{ $label }}</span></button>
+                @else
+                    <a href="{{ $icon === 'chat' ? $p['chat_url'] : ($icon === 'mail' ? 'mailto:'.$p['email'] : url('/meetings').'?invite_user_id='.$p['id']) }}" class="flex flex-col items-center gap-2 rounded-2xl bg-brand/10 text-brand py-3 px-1 min-w-0 hover:bg-brand/20"><x-action-icon :name="$icon" /><span class="text-xs font-semibold">{{ $label }}</span></a>
                 @endif
-                @if(\App\Support\FriendSettings::callsEnabled())
-                    <button type="button" onclick="window.FriendCall && window.FriendCall.start({{ $p['id'] }}, @js($p['name']))" class="btn-secondary" title="{{ __('Audio call') }}" aria-label="{{ __('Audio call') }}"><x-action-icon name="phone" /></button>
-                    <button type="button" onclick="window.FriendCall && window.FriendCall.startVideo({{ $p['id'] }}, @js($p['name']))" class="btn-secondary" title="{{ __('Video call') }}" aria-label="{{ __('Video call') }}"><x-action-icon name="video" /></button>
-                @endif
-                <a href="{{ url('/meetings') }}" class="btn-secondary" title="{{ __('Meetings') }}" aria-label="{{ __('Meetings') }}"><x-action-icon name="calendar" /></a>
-                <a href="mailto:{{ $p['email'] }}" class="btn-secondary" title="{{ __('Email') }}" aria-label="{{ __('Email') }}"><x-action-icon name="mail" /></a>
-            </div>
-        @else
-            <div class="flex flex-wrap gap-3">
-                @if(!empty($p['is_former']) && \App\Support\FriendSettings::chatEnabled())<a href="{{ $p['chat_url'] }}" class="btn-primary" title="{{ __('Open chat history') }}" aria-label="{{ __('Open chat history') }}"><x-action-icon name="chat" /></a>@endif
-                <a href="mailto:{{ $p['email'] }}" class="btn-secondary" title="{{ __('Email') }}" aria-label="{{ __('Email') }}"><x-action-icon name="mail" /></a>
-            </div>
-        @endif
+            @endforeach
+        </div>
+        @if(!$canTalk)<p class="text-sm text-muted">{{ __('Become friends to chat, call or meet.') }}</p>@endif
+        @if(!empty($p['is_former']) && \App\Support\FriendSettings::chatEnabled())<a href="{{ $p['chat_url'] }}" class="btn-secondary">{{ __('Open chat history') }}</a>@endif
 
         {{-- details --}}
         <div class="bg-surface-2 rounded-2xl border border-border p-6">
@@ -45,13 +41,13 @@
             $rows = array_filter([
                 [__('Contact Name'), $p['contact_name'] ?? null],
                 [__('Profile Name'), $p['profile_name'] ?? $p['name']],
-                [__('Email'), $p['email']],
+                [__('Email'), ($p['email'] ?? null)],
                 [__('Username'), $p['username'] ? $p['username'] : null],
-                [__('Member since'), $p['member_since']],
-                [__('Friends since'), $p['friend_since']],
+                [__('Member since'), ($p['member_since'] ?? null)],
+                [__('Friends since'), ($p['friend_since'] ?? null)],
                 [__('Role in your workspace'), $p['team']['role'] ?? null],
                 [__('Last active'), $p['team']['last_active'] ?? null],
-                [__('Language'), $p['language']],
+                [__('Language'), ($p['language'] ?? null)],
             ], fn ($r) => !empty($r[1]));
             @endphp
             <dl class="divide-y divide-border">

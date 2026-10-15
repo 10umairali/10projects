@@ -10,6 +10,7 @@ class NotificationPresentation {
   static String systemBody(Map data, String fallback) => switch ('${data['type'] ?? ''}') {
     'friend_request' => 'Sent you a friend request',
     'friend_accepted' => 'Accepted your friend request',
+    'friend_declined' => 'Rejected your friend request. You can send another request.',
     _ => fallback,
   };
 
@@ -17,6 +18,7 @@ class NotificationPresentation {
     'email_received' || 'new_email' => 'New email',
     'friend_request' => 'Friend request',
     'friend_accepted' => 'Friend request accepted',
+    'friend_declined' => 'Friend request rejected',
     'friend_suggestion' => 'Friend suggestion',
     _ => NotificationPresentation.from(data).label,
   };
@@ -28,6 +30,7 @@ class NotificationPresentation {
     'email_delivered' => 'Email delivered',
     'friend_request' => 'sent a friend request',
     'friend_accepted' => 'accepted your friend request',
+    'friend_declined' => 'rejected your friend request',
     'meeting_updated' => 'updated the meeting',
     'friend_meeting' => 'sent a meeting link',
     _ => label,
@@ -58,6 +61,17 @@ class NotificationPresentation {
   factory NotificationPresentation.from(Map data) {
     final type = '${data['type'] ?? ''}'.toLowerCase();
     final text = '${data['title'] ?? ''} ${data['body'] ?? ''}'.toLowerCase();
+    if (type.startsWith('announcement_')) {
+      final category = type.substring('announcement_'.length);
+      final icon = switch (category) {
+        'marketing' || 'advertising' => Icons.campaign_rounded,
+        'system' => Icons.settings_suggest_rounded,
+        'misc' => Icons.widgets_rounded,
+        _ => Icons.notifications_rounded,
+      };
+      final label = category.isEmpty ? 'General' : '${category[0].toUpperCase()}${category.substring(1)}';
+      return NotificationPresentation(label, category, icon, const Color(0xFF2563EB));
+    }
     if (type.contains('meeting')) return const NotificationPresentation('Meeting', 'meeting', Icons.groups_rounded, Color(0xFF7C3AED));
     if (type.contains('call')) {
       final video = !flag(data['audio_only']) && (flag(data['video']) || type.contains('video') || text.contains('video call'));

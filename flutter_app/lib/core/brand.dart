@@ -6,7 +6,7 @@ import 'config.dart';
 class Brand {
   static String get name => AppConfig.appName;
   static String get tagline => AppConfig.tagline;
-  static const logoAsset = 'assets/brand/logo.png'; // supplied white glyph on the primary tile
+  static const logoAsset = 'assets/brand/official_logo.png'; // supplied white glyph on the primary tile
   static const markAsset = 'assets/brand/mark_white.png'; // white symbol on transparent, for coloured backgrounds
   /// Must equal `splash_bg` in android/app/src/main/res/values/colors.xml (white).
   static const splashColor = Color(0xFFFFFFFF);

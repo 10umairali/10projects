@@ -174,7 +174,7 @@
     var open = document.querySelector('[data-friend-chat][data-user-id="' + l.from_id + '"]');
     if (open && !document.hidden) return;                                      // you are reading that chat right now
     var url = l.chat_url || '/friends/chat/' + l.from_id, text = l.kind === 'call' ? '\uD83D\uDCDE ' + l.preview : l.preview;
-    ding(); toast(l.from_name, text, url); desktopNotify(l.from_name, text, function () { window.location.href = url; });
+    ding(); if (l.kind === 'call' || !window.DahiMessages?.show({type:'chat', from_id:l.from_id, message_id:l.id, sender_name:l.from_name, body:text})) toast(l.from_name, text, url); desktopNotify(l.from_name, text, function () { window.location.href = url; });
   }
 
   // ───────── ring tone (a short beep every 2 s) ─────────

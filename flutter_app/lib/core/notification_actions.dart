@@ -57,7 +57,8 @@ Future<bool> sendNotificationDecline(Map data, {required String token, required 
 Future<void> notificationBackgroundResponse(NotificationResponse response) async {
   WidgetsFlutterBinding.ensureInitialized();
   final decline = response.actionId == 'call_decline_background';
-  if (!decline && response.actionId != 'notification_reply') return;
+  final markRead = response.actionId == 'notification_read';
+  if (!decline && !markRead && response.actionId != 'notification_reply') return;
   Map<String, dynamic> data;
   try { data = Map<String, dynamic>.from(jsonDecode(response.payload ?? '')); } catch (_) { return; }
   const storage = FlutterSecureStorage();
@@ -74,12 +75,16 @@ Future<void> notificationBackgroundResponse(NotificationResponse response) async
     if (token != null && userId != null) {
       sent = decline
         ? await sendNotificationDecline(data, token: token, userId: userId, client: client)
+        : markRead ? await markNotificationRead(data, token: token, userId: userId, client: client)
         : await sendNotificationReply(data, response.input ?? '', token: token, userId: userId, client: client);
     }
   } finally { client.close(); }
   final plugin = FlutterLocalNotificationsPlugin();
   if (sent) {
     await plugin.cancel(response.id ?? 0);
+  } else if (markRead) {
+    await plugin.show(response.id ?? 0, 'Could not mark as read', 'Open the conversation to try again.',
+      const NotificationDetails(android: AndroidNotificationDetails('dm_reply_status', 'Reply status', icon: 'ic_notify_chat')), payload: jsonEncode(data));
   } else if (decline) {
     await plugin.show(response.id ?? 0, 'Call dismissed on this phone', 'Could not notify the caller. The call will time out.',
       const NotificationDetails(android: AndroidNotificationDetails('dm_reply_status', 'Reply status', icon: 'ic_stat_notify')));
@@ -91,4 +96,16 @@ Future<void> notificationBackgroundResponse(NotificationResponse response) async
         iOS: DarwinNotificationDetails(presentAlert: true)),
       payload: jsonEncode({...data, 'draft_reply': response.input ?? ''}));
   }
+}
+
+Future<bool> markNotificationRead(Map data, {required String token, required int userId, required http.Client client}) async {
+  final target = NotificationTarget.from(data);
+  final through = int.tryParse('${data['message_id']}');
+  if (target?.kind != 'friend' || through == null || through <= 0 || token.isEmpty || int.tryParse('${data['recipient_user_id']}') != userId) return false;
+  try {
+    final response = await client.post(Uri.parse('${AppConfig.apiBase}/friends/${target!.id}/read'),
+      headers: {'Accept': 'application/json', 'Content-Type': 'application/json', 'Authorization': 'Bearer $token'},
+      body: jsonEncode({'through_message_id': through})).timeout(const Duration(seconds: 15));
+    return response.statusCode >= 200 && response.statusCode < 300;
+  } catch (_) { return false; }
 }

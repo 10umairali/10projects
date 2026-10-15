@@ -9,7 +9,8 @@ import '../core/widgets.dart';
 
 /// Call log like WhatsApp: who, incoming / outgoing, audio or video, how long, missed or declined. Tap a person to call back.
 class CallHistoryPage extends StatefulWidget {
-  const CallHistoryPage({super.key});
+  final int? userId;
+  const CallHistoryPage({super.key, this.userId});
   @override
   State<CallHistoryPage> createState() => _CallHistoryPageState();
 }
@@ -33,10 +34,10 @@ class _CallHistoryPageState extends State<CallHistoryPage> {
             if (ok && mounted && await run(context, (a) => a.delete('calls/history'), ok: '*')) setState(() => _v++);
           }
           if (v == 'refresh') setState(() => _v++);
-        }, itemBuilder: (_) => const [PopupMenuItem(value: 'refresh', child: Text('Refresh')), PopupMenuItem(value: 'clear', child: Text('Clear call history'))])]),
+        }, itemBuilder: (_) => [const PopupMenuItem(value: 'refresh', child: Text('Refresh')), if (widget.userId == null) const PopupMenuItem(value: 'clear', child: Text('Clear call history'))])]),
         body: Column(children: [const OngoingRooms(), Expanded(child: AsyncView<List<Item>>(
           key: ValueKey(_v),
-          load: (api) async => Api.list(await api.get('calls/history')),
+          load: (api) async => Api.list(await api.getNoCache('calls/history')).where((call) => widget.userId == null || call['peer']?['id'] == widget.userId).toList(),
           builder: (c, calls, reload) => calls.isEmpty
               ? const EmptyState(icon: Icons.call_outlined, text: 'No calls yet.')
               : RefreshIndicator(

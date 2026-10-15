@@ -1,3 +1,4 @@
+import '../core/utility_notice.dart';
 import 'package:flutter/material.dart';
 import '../core/api.dart';
 import '../core/widgets.dart';
@@ -40,7 +41,7 @@ class _ChatPrivacyCardState extends State<ChatPrivacyCard> {
       await Api.of(context).post('presence', body);
     } catch (_) {
       undo();
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Could not save. Try again.')));
+      if (mounted) UtilityNotice.show(context, 'Could not save. Try again.', error: true);
     } finally {
       if (mounted) setState(() => _busy = false);
     }

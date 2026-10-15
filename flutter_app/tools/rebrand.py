@@ -391,6 +391,9 @@ def images():
 if __name__ == '__main__':
     print('Rebranding "%s" …' % CFG['appName'])
     dart_files(); android_files(); images(); launcher_icons(); ios_files()
+    if (ROOT / 'assets/brand/official_logo.png').exists():
+        import runpy
+        runpy.run_path(str(ROOT / 'tools/apply_official_logo.py'), run_name='__main__')
     print('\nDone. Next:')
     print('  1) flutter pub get')
     print('  2) (launcher icons are already written; running  flutter pub run flutter_launcher_icons  is optional)')

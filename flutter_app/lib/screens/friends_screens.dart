@@ -10,6 +10,7 @@ import '../core/calls.dart';
 import 'device_contacts_page.dart';
 import 'compose_page.dart';
 import 'add_friend_page.dart';
+import 'friend_requests_page.dart';
 import 'friend_chat_page.dart';
 import 'person_profile_page.dart';
 
@@ -22,12 +23,8 @@ Future<void> showFriendTools(BuildContext context) async {
   await actionSheet(context, 'Find & manage friends', [
     SheetAction('Add friends', Icons.person_search_rounded,
         () => open(const AddFriendPage()), subtitle: 'Name, username, email or phone'),
-    SheetAction('Friend requests', Icons.person_add_alt_1_rounded,
-        () => open(const AppPage(title: 'Friend requests', body: FriendsPage(initialTab: 1))), subtitle: 'Received and sent requests'),
     SheetAction('Contacts', Icons.contacts_rounded,
         () => open(const DeviceContactsPage()), subtitle: 'Friends on Dahimail and invitations'),
-    SheetAction('Who can find me', Icons.manage_accounts_rounded,
-        () => open(const AppPage(title: 'Phone & discovery', body: PhoneDiscoveryPage())), subtitle: 'Your number and discovery settings'),
   ]);
 }
 
@@ -116,7 +113,7 @@ class _FriendsPageState extends State<FriendsPage> {
                   title: Text('${inc.length} friend request${inc.length == 1 ? '' : 's'} waiting'),
                   trailing: const Icon(Icons.chevron_right_rounded),
                   onTap: () async {
-                    await pushPage(c, const AppPage(title: 'Friend requests', body: FriendsPage(initialTab: 1)));
+                    await pushPage(c, const FriendRequestsPage());
                     if (mounted) setState(() => _v++);
                   },
                 )),
@@ -125,7 +122,7 @@ class _FriendsPageState extends State<FriendsPage> {
                 for (final p in inc)
                   _card(p, subtitle: 'Wants to be your friend · ${p['when'] ?? ''}', actions: [
                     TextButton(style: _small, onPressed: () => _ask('Block ${p['name']}?', 'They will not be able to send you friend requests.', 'Block', (a) => a.post('friends/requests/${p['request_id']}/block'), danger: true), child: const Text('Block', style: TextStyle(color: AppColors.danger))),
-                    OutlinedButton(style: _small, onPressed: () => _ask('Reject this request?', '${p['name']} will not be told, and cannot send you another request.', 'Reject', (a) => a.post('friends/requests/${p['request_id']}/decline'), danger: true), child: const Text('Reject')),
+                    OutlinedButton(style: _small, onPressed: () => _ask('Reject this request?', '${p['name']} will be notified and can send you another request.', 'Reject', (a) => a.post('friends/requests/${p['request_id']}/decline'), danger: true), child: const Text('Reject')),
                     FilledButton(style: _small, onPressed: () => _ask('Accept friend request?', '${p['name']} will be able to message and call you and see your email address.', 'Accept', (a) => a.post('friends/requests/${p['request_id']}/accept')), child: const Text('Accept')),
                   ]),
                 if (inc.isEmpty) const EmptyState(icon: Icons.mark_email_unread_outlined, text: 'No friend requests.'),

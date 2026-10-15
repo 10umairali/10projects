@@ -28,6 +28,12 @@ use PragmaRX\Google2FA\Google2FA;
 class MeController extends Controller
 {
     private const DEFAULT_EVENTS = [
+        'announcement_general' => ['email' => true, 'inApp' => true, 'slack' => false],
+        'announcement_system' => ['email' => true, 'inApp' => true, 'slack' => false],
+        'announcement_marketing' => ['email' => true, 'inApp' => true, 'slack' => false],
+        'announcement_advertising' => ['email' => true, 'inApp' => true, 'slack' => false],
+        'announcement_misc' => ['email' => true, 'inApp' => true, 'slack' => false],
+
         'newConversation'  => ['email' => true,  'inApp' => true,  'slack' => false],
         'assignment'       => ['email' => true,  'inApp' => true,  'slack' => false],
         'aiDraftReady'     => ['email' => false, 'inApp' => true,  'slack' => false],
@@ -277,7 +283,7 @@ class MeController extends Controller
             'emailNotifs' => $p['emailNotifs'] ?? true,
             'inAppNotifs' => $p['inAppNotifs'] ?? true,
             'slackNotifs' => $p['slackNotifs'] ?? false,
-            'events'      => $p['events'] ?? self::DEFAULT_EVENTS,
+            'events'      => array_replace_recursive(self::DEFAULT_EVENTS, $p['events'] ?? []),
         ]]);
     }
 

@@ -475,6 +475,7 @@ test('stored app events and saved chat reach recipient devices', function (strin
         $notification = match ($type) {
             'friend_request' => App\Notifications\FriendNotification::request('Sender'),
             'friend_accepted' => App\Notifications\FriendNotification::accepted('Sender'),
+            'friend_declined' => App\Notifications\FriendNotification::declined('Sender'),
             default => new App\Notifications\InAppNotification('Synthetic alert', 'Synthetic body', '/inbox', type: $type),
         };
         User::findOrFail(1)->notify($notification);
@@ -485,4 +486,16 @@ test('stored app events and saved chat reach recipient devices', function (strin
     Http::assertSent(fn ($request) => $request['message']['data']['type'] === $type
         && $request['message']['data']['recipient_user_id'] === '1'
         && $request['message']['data'][$type === 'chat' ? 'message_id' : 'notification_id'] === (string) $id);
-})->with(['chat', 'friend_request', 'friend_accepted', 'email_received', 'email_sent', 'workflow'])->with([false, true]);
+})->with(['chat', 'friend_request', 'friend_accepted', 'friend_declined', 'email_received', 'email_sent', 'workflow'])->with([false, true]);
+
+
+test('new iOS chat category adds read action without breaking older clients', function () {
+    DB::statement('ALTER TABLE device_tokens ADD COLUMN app_version TEXT');
+    DB::table('device_tokens')->delete();
+    foreach (['1.0.12+1', '1.0.13+2'] as $version) DB::table('device_tokens')->insert(['user_id' => 1, 'token' => 'synthetic-'.$version, 'platform' => 'ios', 'app_version' => $version]);
+    Http::fake(fn () => Http::response(['name' => 'accepted'], 200));
+    app(FcmPush::class)->sendToUser($this->user, 'Alice', 'Hello', ['type' => 'chat', 'from_id' => 2, 'message_id' => 42]);
+    foreach (['1.0.12+1' => 'MESSAGE_REPLY', '1.0.13+2' => 'CHAT_REPLY'] as $version => $category) {
+        Http::assertSent(fn ($request) => ($request['message']['token'] ?? '') === 'synthetic-'.$version && $request['message']['apns']['payload']['aps']['category'] === $category);
+    }
+});

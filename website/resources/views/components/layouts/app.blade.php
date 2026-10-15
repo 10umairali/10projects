@@ -84,6 +84,7 @@
         <style id="admin-custom-css">{!! $__customCss !!}</style>
     @endif
     {!! \App\Models\SystemSetting::get('head_code', '') !!}
+<style>.profile-initial,.mail-avatar-initial{background:#dbeafe!important;color:#1e3a8a!important;font-weight:700!important;font-size:18px!important}</style>
 </head>
 <body class="h-full overflow-hidden font-sans text-ink bg-surface antialiased">
 <noscript>
@@ -168,7 +169,7 @@
             @php
             $navItems = [
                 ['label' => __('Dashboard'), 'href' => url('/dashboard'), 'icon' => '<rect x="3" y="3" width="7" height="7" rx="1.5"></rect><rect x="14" y="3" width="7" height="7" rx="1.5"></rect><rect x="3" y="14" width="7" height="7" rx="1.5"></rect><rect x="14" y="14" width="7" height="7" rx="1.5"></rect>'],
-                ['label' => __('Friends'), 'href' => url('/people'), 'icon' => '<path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path>'],
+                ['label' => __('Friends'), 'pages' => [['label' => __('Chats'), 'href' => url('/friends')], ['label' => __('Friends'), 'href' => url('/people')]], 'href' => url('/people'), 'icon' => '<path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path>'],
                 ['label' => __('Meetings'), 'href' => url('/meetings'), 'icon' => '<rect x="3" y="4" width="18" height="18" rx="2"></rect><path d="M16 2v4M8 2v4M3 10h18M8 14h3M8 17h6"></path>'],
                 ['label' => __('Inbox'), 'href' => url('/inbox'), 'icon' => '<polyline points="22 12 16 12 14 15 10 15 8 12 2 12"></polyline><path d="M5.45 5.11L2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"></path>'],
                 ['label' => __('Contacts'), 'href' => url('/contacts'), 'icon' => '<circle cx="9" cy="8" r="3"></circle><path d="M3 19c1.8-3 4.8-4.5 6-4.5s4.2 1.5 6 4.5"></path><path d="M15.5 11a3 3 0 1 0 0-6"></path><path d="M18 19c.6-1.1 1.6-2.2 3-3"></path>'],
@@ -190,6 +191,21 @@
                 @foreach($navItems as $item)
                     @if(isset($item['section']))
                         <li class="menu-title mt-2.5" x-show="!sidebarCollapsed"><span>{{ $item['section'] }}</span></li>
+                    @elseif(isset($item['pages']))
+                        <li>
+                            <details @if(request()->is('friends', 'friends/*', 'people', 'people/*')) open @endif>
+                                <summary class="nav-item" aria-label="{{ __('Friends menu') }}">
+                                    <svg viewBox="0 0 24 24" class="h-[18px] w-[18px] shrink-0" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">@safeSvg($item['icon'])</svg>
+                                    <span>{{ $item['label'] }}</span>
+                                </summary>
+                                <ul>
+                                    @foreach($item['pages'] as $page)
+                                        @php $pagePath = parse_url($page['href'], PHP_URL_PATH); @endphp
+                                        <li><a href="{{ $page['href'] }}" wire:navigate class="nav-item" :class="(currentPath === '{{ $pagePath }}' || currentPath.startsWith('{{ $pagePath }}/')) ? 'nav-item-active' : ''">{{ $page['label'] }}</a></li>
+                                    @endforeach
+                                </ul>
+                            </details>
+                        </li>
                     @else
                         <li>
                             <a href="{{ $item['href'] }}" wire:navigate.hover
@@ -443,6 +459,7 @@
                                 } catch (e) {}
                             },
                             openNotification(n) {
+                                if (window.DahiMessages?.target(n)) { window.DahiMessages.view(n); return; }
                                 if (n.action_url) {
                                     window.location.href = '{{ url('/notifications') }}/' + n.id + '/open';
                                 } else {
@@ -466,7 +483,7 @@
                                     const known = new Set(this.notifications.map(n => n.id));
                                     if (this.loaded) for (const n of (j.notifications || [])) {
                                         if (!n.read && !known.has(n.id) && ['friend_request', 'friend_accepted', 'email_received', 'email_failed', 'email_bounced'].includes(n.type)) {
-                                            window.dispatchEvent(new CustomEvent('toast', {detail: {type: 'info', message: n.title}}));
+                                            if (!window.DahiMessages?.show(n)) window.dispatchEvent(new CustomEvent('toast', {detail: {type: 'info', message: n.title}}));
                                         }
                                     }
                                     this.notifications = j.notifications || [];
@@ -583,6 +600,8 @@
 
         {{-- Toast container — MUST render before any <x-toast> dispatcher
              so its window listener is registered before flash toasts fire. --}}
+        <link rel="stylesheet" href="{{ asset('css/message-notifications.css') }}?v=20261015">
+        <script src="{{ asset('js/message-notifications.js') }}?v=20261015"></script>
         <x-toast-container />
 
         {{-- Page content --}}

@@ -7,6 +7,8 @@ import '../core/theme.dart';
 import '../core/util.dart';
 import '../core/widgets.dart';
 import 'friend_chat_page.dart';
+import 'friend_requests_page.dart';
+import '../core/refresh.dart';
 
 /// Find a person and send a friend request: type a username, a name, a FULL e-mail address (name@dahimail.com) or a phone number.
 /// The person becomes a friend when they accept.
@@ -25,9 +27,35 @@ class _AddFriendPageState extends State<AddFriendPage> {
   bool _busy = false;
   final Set<int> _sending = {};
   int _seq = 0;
+  int? _incoming, _outgoing;
+
+  @override
+  void initState() {
+    super.initState();
+    AppRefresh.tick.addListener(_loadCounts);
+    WidgetsBinding.instance.addPostFrameCallback((_) { if (mounted) _loadCounts(); });
+  }
+
+  Future<void> _loadCounts() async {
+    try {
+      final data = Api.obj(await Api.of(context).getNoCache('friends'));
+      if (mounted) { setState(() {
+        _incoming = Api.list(data['incoming']).length;
+        _outgoing = Api.list(data['outgoing']).length;
+      }); }
+    } on ApiException { /* The requests page provides retry on network failure. */ }
+  }
+
+  Future<void> _openRequests(bool sent) async {
+    await pushPage(context, FriendRequestsPage(sent: sent));
+    if (!mounted) return;
+    _loadCounts();
+    if (_q.text.trim().length >= 3) _go(_q.text.trim());
+  }
 
   @override
   void dispose() {
+    AppRefresh.tick.removeListener(_loadCounts);
     _t?.cancel();
     _q.dispose();
     super.dispose();
@@ -70,6 +98,7 @@ class _AddFriendPageState extends State<AddFriendPage> {
       await Api.of(context).post('friends/requests', {'user_id': p['id']});
       if (mounted) {
         setState(() => p['relation'] = 'sent');
+        _loadCounts();
         toast(context, 'Request sent to ${p['name']}. They get a notification on their phone.');
       }
     } on ApiException catch (e) {
@@ -98,7 +127,16 @@ class _AddFriendPageState extends State<AddFriendPage> {
 
   @override
   Widget build(BuildContext context) => Scaffold(
-        appBar: AppBar(title: const Text('Add friends')),
+        appBar: AppBar(title: const Text('Add friends'), actions: [
+          PopupMenuButton<bool>(
+            tooltip: 'Friend requests',
+            onSelected: _openRequests,
+            itemBuilder: (_) => [
+              PopupMenuItem(value: false, child: RequestCountLabel('Friend requests', count: _incoming ?? 0)),
+              PopupMenuItem(value: true, child: RequestCountLabel('Sent requests', count: _outgoing ?? 0)),
+            ],
+          ),
+        ]),
         body: Column(children: [
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),

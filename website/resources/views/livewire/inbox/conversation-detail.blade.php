@@ -152,7 +152,7 @@
         </div>
 
         {{-- Content Area Scrollable --}}
-        <div class="flex-1 min-h-0 overflow-y-auto hide-scroll" id="messages-container" aria-live="polite" aria-relevant="additions">
+        <div class="flex-1 min-h-0 overflow-y-auto" id="messages-container" aria-live="polite" aria-relevant="additions">
             <div class="px-6 pt-4 pb-6 text-gray-300 antialiased font-sans">
 
                 {{-- Subject + AI Recap button --}}
@@ -363,7 +363,7 @@
                                     <iframe
                                         src="{{ route('message.html', $message->id) }}"
                                         class="w-full border-0"
-                                        onload="try{this.style.height=Math.max(400,this.contentDocument.body.scrollHeight+30)+'px';}catch(e){}" scrolling="no" style="min-height:400px;height:600px;background:#fff;"
+                                        title="Email content" style="height:60vh;min-height:240px;max-height:800px;background:#fff;"
                                     ></iframe>
                                 </div>
                                 @php $realAttachments = $message->attachments?->filter(fn ($a) => empty($a->content_id)) ?? collect(); @endphp
@@ -416,7 +416,7 @@
                                     <iframe
                                         src="{{ route('message.html', $message->id) }}"
                                         class="w-full border-0"
-                                        onload="try{this.style.height=Math.max(400,this.contentDocument.body.scrollHeight+30)+'px';}catch(e){}" scrolling="no" style="min-height:400px;height:600px;background:#fff;"
+                                        title="Email content" style="height:60vh;min-height:240px;max-height:800px;background:#fff;"
                                     ></iframe>
                                 </div>
                                 @php $realAttachments = $message->attachments?->filter(fn ($a) => empty($a->content_id)) ?? collect(); @endphp
@@ -474,15 +474,15 @@
         @endif
 
         {{-- Reply Composer with toggle --}}
-        <div x-data="{ composerOpen: false }" class="shrink-0">
+        <div wire:key="composer-toggle-{{ $conversationId }}" x-data="{ composerOpen: false }" class="shrink-0">
             <button @click="composerOpen = !composerOpen"
-                    class="w-full flex items-center justify-center gap-1.5 py-1.5 border-t border-[#2d3039] text-gray-500 hover:text-gray-300 hover:bg-white/[0.02] transition-colors text-xs">
+                    class="m-3 inline-flex items-center justify-center gap-2 rounded-full bg-blue-600 px-6 py-2.5 text-white hover:bg-blue-500 transition-colors text-sm font-semibold">
                 <svg class="w-3.5 h-3.5 transition-transform" :class="composerOpen ? '' : 'rotate-180'" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
                     <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5"/>
                 </svg>
                 <span x-text="composerOpen ? 'Hide reply' : 'Reply'"></span>
             </button>
-            <div x-show="composerOpen" x-collapse>
+            <div x-show="composerOpen" x-cloak x-collapse>
                 <livewire:inbox.reply-composer :conversationId="$conversationId" :key="'reply-'.$conversationId" />
             </div>
         </div>

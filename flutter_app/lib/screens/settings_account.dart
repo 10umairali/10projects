@@ -231,6 +231,12 @@ class _NotificationPrefsPageState extends State<NotificationPrefsPage> {
     'chatMessage': 'Chat messages',
     'incomingCall': 'Calls & meetings',
     'adminNotice': 'Announcements',
+    'announcement_general': 'General announcements',
+    'announcement_system': 'System announcements',
+    'announcement_marketing': 'Marketing announcements',
+    'announcement_advertising': 'Advertising announcements',
+    'announcement_misc': 'Misc announcements',
+
     'meetings': 'Meetings & reminders',
     'security': 'Security alerts',
     'activity': 'Deals, workflows & team',

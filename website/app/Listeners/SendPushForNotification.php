@@ -28,10 +28,18 @@ class SendPushForNotification
         $body  = (string) ($data['body'] ?? $data['message'] ?? '');
 
         $id = (string) ($event->response->id ?? $event->notification->id ?? '');
-        \App\Services\RealtimeUpdates::users([$event->notifiable->id], ['type' => $data['type'] ?? 'notification', 'notification_id' => $id, 'title' => $title]);
+        \App\Services\RealtimeUpdates::users([$event->notifiable->id], ['type' => $data['type'] ?? 'notification', 'notification_id' => $id,
+            'message_id' => $data['message_id'] ?? '', 'title' => $title]);
+
+        // Keep long broadcast email content in the notification center; mobile pushes have a 4 KB envelope.
+        if (str_starts_with((string) ($data['type'] ?? ''), 'announcement_')) {
+            $title = \Illuminate\Support\Str::limit($title, 80);
+            $body = \Illuminate\Support\Str::limit($body, 240);
+        }
 
         app(FcmPush::class)->sendToUser($event->notifiable, $title, $body, [
             'notification_id' => $id,
+            'message_id' => $data['message_id'] ?? '',
             'type'       => $data['type'] ?? 'notification',
             'action_url' => $data['action_url'] ?? '',
             'sender_name' => $data['sender_name'] ?? '',

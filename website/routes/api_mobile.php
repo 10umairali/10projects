@@ -175,6 +175,7 @@ Route::prefix('v1')->middleware(['auth:sanctum', 'throttle:api'])->group(functio
     Route::post('friends/{userId}/messages/{messageId}/react', [\App\Http\Controllers\Friends\FriendChatController::class, 'react'])->whereNumber('userId')->whereNumber('messageId');
     Route::post('friends/{userId}/messages/{messageId}/forward', [\App\Http\Controllers\Friends\FriendChatController::class, 'forward'])->whereNumber('userId')->whereNumber('messageId');
     Route::get('friends/forward-targets', [\App\Http\Controllers\Friends\FriendChatController::class, 'targets']);
+    Route::post('friends/chats/organize', [\App\Http\Controllers\Friends\FriendChatController::class, 'organize']);
     Route::get('friends/chats', [\App\Http\Controllers\Friends\FriendChatController::class, 'chats']);
     Route::get('friends/search', [\App\Http\Controllers\Friends\FriendSearchController::class, 'search']);
     Route::delete('calls/history', [\App\Http\Controllers\Friends\FriendCallController::class, 'clearHistory']);

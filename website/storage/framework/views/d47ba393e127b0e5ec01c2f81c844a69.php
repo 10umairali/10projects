@@ -56,7 +56,7 @@
             <div class="mt-3 divide-y divide-border" x-show="res.length">
                 <template x-for="p in res" :key="p.id">
                     <div class="flex items-center gap-3 py-2.5">
-                        <div class="w-10 h-10 rounded-full bg-brand/10 text-brand flex items-center justify-center font-semibold overflow-hidden flex-shrink-0">
+                        <div class="w-10 h-10 rounded-full profile-initial flex items-center justify-center font-semibold overflow-hidden flex-shrink-0">
                             <template x-if="p.avatar_url"><img :src="p.avatar_url" alt="" class="w-full h-full object-cover"></template>
                             <template x-if="!p.avatar_url"><span x-text="(p.name || '?').charAt(0).toUpperCase()"></span></template>
                         </div>
@@ -69,27 +69,5 @@
                 </template>
             </div>
         </div>
-        <a href="<?php echo e(url('/people/calls')); ?>" class="inline-flex items-center gap-2 text-sm text-brand hover:underline"><?php if (isset($component)) { $__componentOriginal2b612bcbad651c78da47ba0e8d4b3729 = $component; } ?>
-<?php if (isset($attributes)) { $__attributesOriginal2b612bcbad651c78da47ba0e8d4b3729 = $attributes; } ?>
-<?php $component = Illuminate\View\AnonymousComponent::resolve(['view' => 'components.action-icon','data' => ['name' => 'phone']] + (isset($attributes) && $attributes instanceof Illuminate\View\ComponentAttributeBag ? $attributes->all() : [])); ?>
-<?php $component->withName('action-icon'); ?>
-<?php if ($component->shouldRender()): ?>
-<?php $__env->startComponent($component->resolveView(), $component->data()); ?>
-<?php if (isset($attributes) && $attributes instanceof Illuminate\View\ComponentAttributeBag): ?>
-<?php $attributes = $attributes->except(\Illuminate\View\AnonymousComponent::ignoredParameterNames()); ?>
-<?php endif; ?>
-<?php $component->withAttributes(['name' => 'phone']); ?>
-<?php \Livewire\Features\SupportCompiledWireKeys\SupportCompiledWireKeys::processComponentKey($component); ?>
-
-<?php echo $__env->renderComponent(); ?>
-<?php endif; ?>
-<?php if (isset($__attributesOriginal2b612bcbad651c78da47ba0e8d4b3729)): ?>
-<?php $attributes = $__attributesOriginal2b612bcbad651c78da47ba0e8d4b3729; ?>
-<?php unset($__attributesOriginal2b612bcbad651c78da47ba0e8d4b3729); ?>
-<?php endif; ?>
-<?php if (isset($__componentOriginal2b612bcbad651c78da47ba0e8d4b3729)): ?>
-<?php $component = $__componentOriginal2b612bcbad651c78da47ba0e8d4b3729; ?>
-<?php unset($__componentOriginal2b612bcbad651c78da47ba0e8d4b3729); ?>
-<?php endif; ?> <?php echo e(__('Call history')); ?></a>
     </div>
 <?php /**PATH /home/dahimail.com/public_html/resources/views/friends/_search.blade.php ENDPATH**/ ?>

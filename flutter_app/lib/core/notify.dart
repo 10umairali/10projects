@@ -17,6 +17,7 @@ import 'theme.dart';
 import 'config.dart';
 import 'notification_presentation.dart';
 import 'notification_actions.dart';
+import 'notification_style.dart';
 import 'device_env.dart';
 import 'package:http/http.dart' as http;
 
@@ -57,6 +58,11 @@ class NotifyService with WidgetsBindingObserver {
     final ios = DarwinInitializationSettings(requestAlertPermission: false, requestBadgePermission: false, requestSoundPermission: false,
       notificationCategories: [
         DarwinNotificationCategory('MESSAGE_VIEW', actions: [DarwinNotificationAction.plain('notification_view', 'View', options: {DarwinNotificationActionOption.foreground})]),
+        DarwinNotificationCategory('CHAT_REPLY', actions: [
+          DarwinNotificationAction.plain('notification_view', 'View', options: {DarwinNotificationActionOption.foreground}),
+          DarwinNotificationAction.text('notification_reply', 'Reply', buttonTitle: 'Send', placeholder: 'Write a reply', options: {DarwinNotificationActionOption.authenticationRequired}),
+          DarwinNotificationAction.plain('notification_read', 'Mark as read', options: {DarwinNotificationActionOption.authenticationRequired}),
+        ]),
         DarwinNotificationCategory('MESSAGE_REPLY', actions: [
           DarwinNotificationAction.plain('notification_view', 'View', options: {DarwinNotificationActionOption.foreground}),
           DarwinNotificationAction.text('notification_reply', 'Reply', buttonTitle: 'Send', placeholder: 'Write a reply', options: {DarwinNotificationActionOption.authenticationRequired}),
@@ -95,9 +101,9 @@ class NotifyService with WidgetsBindingObserver {
 
   void _onResponse(NotificationResponse r) {
     final a = r.actionId ?? '';
-    if (a == 'notification_reply') { notificationBackgroundResponse(r); return; }
+    if (a == 'notification_reply' || a == 'notification_read') { notificationBackgroundResponse(r); return; }
     if ((r.payload ?? '').startsWith('{')) {
-      try { openRemote(Map<String, dynamic>.from(jsonDecode(r.payload!))); return; } catch (_) {}
+      try { openRemote({...Map<String, dynamic>.from(jsonDecode(r.payload!)), if (a == 'notification_view') 'notification_action': 'view'}); return; } catch (_) {}
     }
     if (a == 'call_end') return onCallAction?.call('end');
     if (a == 'call_accept' || a == 'call_decline') {
@@ -202,9 +208,11 @@ class NotifyService with WidgetsBindingObserver {
         playSound: playSound,
         enableVibration: prefs.notifVibrate,
         largeIcon: avatar,
-        icon: 'ic_stat_notify',
+        icon: NotificationStyle.of(notification ?? {}).smallIcon,
         actions: notification == null ? null : [
           const AndroidNotificationAction('notification_view', 'View', showsUserInterface: true),
+          if (notification['type'] == 'chat' && notification['message_id'] != null)
+            const AndroidNotificationAction('notification_read', 'Mark as read', cancelNotification: false),
           if (NotificationTarget.from(notification) != null)
             const AndroidNotificationAction('notification_reply', 'Reply', cancelNotification: false,
               inputs: [AndroidNotificationActionInput(label: 'Reply')]),
@@ -214,7 +222,7 @@ class NotifyService with WidgetsBindingObserver {
         styleInformation: BigTextStyleInformation(displayBody),
         groupKey: '${AppConfig.urlScheme}.${presentation?.kind ?? category}',
       ),
-      iOS: DarwinNotificationDetails(presentAlert: true, presentBadge: true, presentBanner: true, presentList: true, presentSound: playSound, subtitle: notification == null ? null : displayTitle, threadIdentifier: presentation?.kind, categoryIdentifier: notification != null && NotificationTarget.from(notification) != null ? 'MESSAGE_REPLY' : 'MESSAGE_VIEW'),
+      iOS: DarwinNotificationDetails(presentAlert: true, presentBadge: true, presentBanner: true, presentList: true, presentSound: playSound, subtitle: notification == null ? null : displayTitle, threadIdentifier: presentation?.kind, categoryIdentifier: notification != null && NotificationTarget.from(notification) != null ? (notification['type'] == 'chat' ? 'CHAT_REPLY' : 'MESSAGE_REPLY') : 'MESSAGE_VIEW'),
     );
     await _plugin.show(id, defaultTargetPlatform == TargetPlatform.iOS ? (label ?? displayTitle) : displayTitle, displayBody, details, payload: notification == null ? category : jsonEncode(notification));
   }

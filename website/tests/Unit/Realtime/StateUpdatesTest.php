@@ -139,3 +139,25 @@ test('call decisions carry room status to both participants without another API 
     \App\Services\Friends\FriendPush::stopRinging($call, 'declined');
     Event::assertDispatched(StateChanged::class, fn ($e) => $e->broadcastWith()['status'] === 'declined');
 });
+
+
+test('email refresh reaches the mobile owner even with alerts disabled and carries message identity', function () {
+    DB::table('users')->where('id', 1)->update(['notification_preferences' => json_encode(['inAppNotifs' => false])]);
+    $m = Message::create($this->mail);
+    Notification::assertNothingSent();
+    Event::assertDispatched(StateChanged::class, fn ($event) => $event->broadcastWith()['type'] === 'email'
+        && array_map(fn ($channel) => $channel->name, $event->broadcastOn()) === ['private-user.1']);
+    $alert = new InAppNotification('Email', messageId: $m->id);
+    expect($alert->toArray(User::find(1))['message_id'])->toBe($m->id);
+});
+
+test('muting email suppresses alerts but preserves realtime list updates', function () {
+    (require database_path('migrations/2026_10_15_000002_create_email_notification_mutes.php'))->up();
+    DB::table('email_notification_mutes')->insert(['user_id' => 1, 'conversation_id' => $this->mail['conversation_id']]);
+    Message::create($this->mail);
+    Notification::assertNothingSent();
+    Event::assertDispatched(StateChanged::class);
+    DB::table('email_notification_mutes')->delete();
+    Message::create($this->mail);
+    Notification::assertSentTo(User::find(1), InAppNotification::class);
+});

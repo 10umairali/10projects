@@ -38,6 +38,8 @@ class NotificationController extends Controller
                 }
                 return [
                     'id' => $n->id,
+                    'message_id' => $data['message_id'] ?? null,
+                    'recipient_user_id' => $user->id,
                     'session_entry' => $entry,
                     'title' => $data['title'] ?? 'Notification',
                     'body' => $data['body'] ?? '',

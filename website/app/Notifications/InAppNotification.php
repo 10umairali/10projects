@@ -25,6 +25,7 @@ class InAppNotification extends Notification
         public readonly ?string $type = 'workflow',
         public readonly string $senderName = '',
         public readonly string $senderAvatar = '',
+        public readonly ?int $messageId = null,
     ) {}
 
     public function via(object $notifiable): array
@@ -42,6 +43,7 @@ class InAppNotification extends Notification
             'icon' => $this->icon,
             'sender_name' => $this->senderName,
             'sender_avatar' => $this->senderAvatar,
+            'message_id' => $this->messageId,
         ];
     }
 }

@@ -74,3 +74,31 @@ test('device directory matches authorize a friend request without exposing email
     expect($matches[0])->not->toHaveKey('email');
     expect($service->send($this->me, 2)[0])->toBeTrue();
 });
+
+test('rejecting notifies the sender and allows another request without duplicating the relationship', function () {
+    $service = app(FriendService::class);
+    app(FriendFinder::class)->search($this->me, 'alice.example');
+    expect($service->send($this->me, 2)[0])->toBeTrue();
+    $id = DB::table('friend_requests')->value('id');
+    expect($service->respond(User::find(2), $id, 'decline')[0])->toBeTrue();
+    Notification::assertSentTo($this->me, \App\Notifications\FriendNotification::class, fn ($n) => $n->kind === 'friend_declined');
+    expect($service->send($this->me, 2)[0])->toBeTrue();
+    expect(DB::table('friend_requests')->count())->toBe(1);
+    expect(DB::table('friend_requests')->value('status'))->toBe('pending');
+    expect($service->cancel(User::find(2), $id)[0])->toBeFalse();
+    expect($service->cancel($this->me, $id)[0])->toBeTrue();
+    expect(DB::table('friend_requests')->count())->toBe(0);
+});
+
+test('blocked requests cannot be resent and acceptance notifies the sender', function () {
+    $service = app(FriendService::class);
+    app(FriendFinder::class)->search($this->me, 'alice.example');
+    $service->send($this->me, 2);
+    $id = DB::table('friend_requests')->value('id');
+    expect($service->respond($this->me, $id, 'accept')[0])->toBeFalse();
+    expect($service->respond(User::find(2), $id, 'accept')[0])->toBeTrue();
+    Notification::assertSentTo($this->me, \App\Notifications\FriendNotification::class, fn ($n) => $n->kind === 'friend_accepted');
+    expect(DB::table('friend_requests')->value('status'))->toBe('accepted');
+    DB::table('friend_requests')->update(['status' => 'blocked']);
+    expect($service->send($this->me, 2)[0])->toBeFalse();
+});

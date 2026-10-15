@@ -10,7 +10,7 @@
                     @foreach($recentChats as $c)
                         <a wire:key="recent-chat-{{ $c['id'] }}" href="{{ $c['chat_url'] }}" class="flex items-center gap-3 px-4 py-3 hover:bg-black/5">
                             <div class="relative flex-shrink-0">
-                                <div class="w-11 h-11 rounded-full bg-brand/10 text-brand flex items-center justify-center font-semibold overflow-hidden">@if($c['avatar_url'])<img src="{{ $c['avatar_url'] }}" alt="" class="w-full h-full object-cover">@else{{ strtoupper(mb_substr($c['name'], 0, 1)) }}@endif</div>
+                                <div class="w-11 h-11 rounded-full profile-initial flex items-center justify-center font-semibold overflow-hidden">@if($c['avatar_url'])<img src="{{ $c['avatar_url'] }}" alt="" class="w-full h-full object-cover">@else{{ strtoupper(mb_substr($c['name'], 0, 1)) }}@endif</div>
                                 @if($c['online'])<span class="absolute right-0 bottom-0 w-3 h-3 rounded-full bg-green-500 border-2 border-surface-2"></span>@endif
                             </div>
                             <div class="min-w-0 flex-1">

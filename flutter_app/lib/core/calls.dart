@@ -1,3 +1,4 @@
+import 'utility_notice.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
@@ -750,6 +751,7 @@ class CallManager with WidgetsBindingObserver {
       NotifyService.I.showBanner({
         'type': l['kind'] == 'call' ? 'missed_call' : 'chat',
         'sender_name': name, 'sender_avatar': l['from_avatar'], 'body': text, 'from_id': from,
+        'message_id': id, 'recipient_user_id': _session?.userId,
       });
     } else if (!NotifyService.I.pushActive && await NotifyService.I.allowed()) {
       // with push the server already sent this notification – a second one here would be a duplicate
@@ -779,7 +781,7 @@ class CallManager with WidgetsBindingObserver {
       _show(c);
       await c.startOutgoing();
     } on ApiException catch (e) {
-      if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+      if (context.mounted) UtilityNotice.show(context, e.message, error: true);
     }
   }
 
@@ -814,7 +816,7 @@ class CallManager with WidgetsBindingObserver {
       if (code == null) throw ApiException(422, raw is Map ? '${raw['message'] ?? 'Could not start the video call'}' : 'Could not start the video call');
       if (context.mounted) await Navigator.of(context).push(MaterialPageRoute(fullscreenDialog: true, builder: (_) => MeetingRoomPage(code: '$code', title: name.isEmpty ? '${audioOnly ? 'Audio' : 'Video'} call' : '${audioOnly ? 'Audio' : 'Video'} call with $name', autoJoin: true, audioOnly: audioOnly)));
     } on ApiException catch (e) {
-      if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+      if (context.mounted) UtilityNotice.show(context, e.message, error: true);
     }
   }
 

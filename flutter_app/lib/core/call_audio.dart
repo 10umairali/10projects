@@ -1,3 +1,4 @@
+import 'utility_notice.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
@@ -117,8 +118,6 @@ Future<void> showCallAudioPicker(BuildContext context, CallAudio audio,
           ));
   if (chosen == null || !context.mounted) return;
   if (!await select(chosen) && context.mounted) {
-    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-        content: Text(
-            'Could not switch audio. Check that the device is connected and try again.')));
+    UtilityNotice.show(context, 'Could not switch audio. Check that the device is connected and try again.', error: true);
   }
 }

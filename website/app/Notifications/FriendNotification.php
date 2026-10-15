@@ -34,6 +34,11 @@ class FriendNotification extends Notification
         return new self('friend_accepted', "{$name} accepted your friend request", 'You can now message each other.', '/friends', $name, $avatar);
     }
 
+    public static function declined(string $name, string $avatar = ''): self
+    {
+        return new self('friend_declined', "{$name} rejected your friend request", 'You can send another friend request.', '/friends', $name, $avatar);
+    }
+
     public static function verifyPhone(): self
     {
         return new self('friend_verify', 'Verify your phone number', 'Verify it so friends who saved your number can find you.', '/settings/phone');

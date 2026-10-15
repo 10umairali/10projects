@@ -94,6 +94,13 @@ class FriendChatController extends Controller
     }
 
     /** the chat list (one row per person) – app Chats tab + website */
+    public function organize(Request $request): JsonResponse
+    {
+        $d = $request->validate(['ids' => 'required|array|min:1|max:100', 'ids.*' => 'required|integer|min:1', 'action' => 'required|in:pin,unpin,mute,unmute,archive,unarchive,delete,clear']);
+        app(\App\Services\Friends\ChatPreferences::class)->apply($request->user(), $d['ids'], $d['action']);
+        return response()->json(['message' => 'Chats updated.']);
+    }
+
     public function chats(Request $request): JsonResponse
     {
         if (!FriendSettings::chatEnabled()) return response()->json(['data' => [], 'features' => FriendSettings::features()]);

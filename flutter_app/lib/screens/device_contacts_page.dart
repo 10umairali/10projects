@@ -6,6 +6,7 @@ import '../core/config.dart';
 import '../core/util.dart';
 import '../core/widgets.dart';
 import 'person_profile_page.dart';
+import 'friends_screens.dart';
 
 class DeviceContactsPage extends StatefulWidget {
   const DeviceContactsPage({super.key});
@@ -49,7 +50,7 @@ class _DeviceContactsPageState extends State<DeviceContactsPage> {
     final matchedKeys = _matches.map((u) => u['phone_key']).toSet();
     final invitations = _contacts.where((c) => !(c['keys'] as List).any(matchedKeys.contains)).toList();
     return Scaffold(
-      appBar: AppBar(title: const Text('Contacts'), actions: [if (_syncer.allowed && !_syncer.paused) IconButton(onPressed: _syncer.busy ? null : _syncer.pause, tooltip: 'Stop syncing', icon: const Icon(Icons.sync_disabled))]),
+      appBar: AppBar(title: const Text('Contacts'), actions: [IconButton(onPressed: () => pushPage(context, const AppPage(title: 'Who can find me', body: PhoneDiscoveryPage())), tooltip: 'Who can find me', icon: const Icon(Icons.settings_outlined))]),
       body: RefreshIndicator(
         onRefresh: _sync,
         child: ListView(physics: const AlwaysScrollableScrollPhysics(), padding: const EdgeInsets.all(16), children: [

@@ -54,4 +54,17 @@ void main() {
       client: MockClient((_) async => throw Exception('offline'))), false);
   });
 
+  test('mark read uses the notification boundary and refuses stale accounts', () async {
+    final requests = <http.Request>[];
+    final client = MockClient((r) async { requests.add(r); return http.Response('{}', 200); });
+    final data = {'type': 'chat', 'from_id': '2', 'recipient_user_id': '1', 'message_id': '42', 'action_url': 'https://attacker.test'};
+    expect(await markNotificationRead(data, token: 'synthetic', userId: 2, client: client), false);
+    expect(await markNotificationRead({...data, 'message_id': null}, token: 'synthetic', userId: 1, client: client), false);
+    expect(requests, isEmpty);
+    expect(await markNotificationRead(data, token: 'synthetic', userId: 1, client: client), true);
+    expect(requests.single.url.path, endsWith('/friends/2/read'));
+    expect(requests.single.url.host, isNot('attacker.test'));
+    expect(jsonDecode(requests.single.body), {'through_message_id': 42});
+  });
+
 }

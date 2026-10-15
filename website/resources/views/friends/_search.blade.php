@@ -35,7 +35,7 @@
             <div class="mt-3 divide-y divide-border" x-show="res.length">
                 <template x-for="p in res" :key="p.id">
                     <div class="flex items-center gap-3 py-2.5">
-                        <div class="w-10 h-10 rounded-full bg-brand/10 text-brand flex items-center justify-center font-semibold overflow-hidden flex-shrink-0">
+                        <div class="w-10 h-10 rounded-full profile-initial flex items-center justify-center font-semibold overflow-hidden flex-shrink-0">
                             <template x-if="p.avatar_url"><img :src="p.avatar_url" alt="" class="w-full h-full object-cover"></template>
                             <template x-if="!p.avatar_url"><span x-text="(p.name || '?').charAt(0).toUpperCase()"></span></template>
                         </div>
@@ -48,5 +48,4 @@
                 </template>
             </div>
         </div>
-        <a href="{{ url('/people/calls') }}" class="inline-flex items-center gap-2 text-sm text-brand hover:underline"><x-action-icon name="phone" /> {{ __('Call history') }}</a>
     </div>
