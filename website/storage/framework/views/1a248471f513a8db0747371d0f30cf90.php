@@ -1,0 +1,13 @@
+<a <?php \Livewire\Features\SupportCompiledWireKeys\SupportCompiledWireKeys::$currentLoop['key'] = 'chat-person-'.e($tab).'-'.e($p['id']).''; ?>wire:key="chat-person-<?php echo e($tab); ?>-<?php echo e($p['id']); ?>" href="<?php echo e($p['chat_url']); ?>" class="messenger-person <?php echo e($selectedId === (int) $p['id'] ? 'is-selected' : ''); ?>" <?php if($selectedId === (int) $p['id']): ?> aria-current="page" <?php endif; ?>>
+    <div class="messenger-avatar">
+        <?php if(\Livewire\Mechanisms\ExtendBlade\ExtendBlade::isRenderingLivewireComponent()): ?><!--[if BLOCK]><![endif]--><?php endif; ?><?php if($p['avatar_url']): ?><img src="<?php echo e($p['avatar_url']); ?>" alt=""><?php else: ?><?php echo e(strtoupper(mb_substr($p['name'], 0, 1))); ?><?php endif; ?><?php if(\Livewire\Mechanisms\ExtendBlade\ExtendBlade::isRenderingLivewireComponent()): ?><!--[if ENDBLOCK]><![endif]--><?php endif; ?>
+        <?php if(\Livewire\Mechanisms\ExtendBlade\ExtendBlade::isRenderingLivewireComponent()): ?><!--[if BLOCK]><![endif]--><?php endif; ?><?php if(!empty($p['online'])): ?><span class="messenger-online" title="<?php echo e(__('Online')); ?>"></span><?php endif; ?><?php if(\Livewire\Mechanisms\ExtendBlade\ExtendBlade::isRenderingLivewireComponent()): ?><!--[if ENDBLOCK]><![endif]--><?php endif; ?>
+    </div>
+    <div class="min-w-0 flex-1">
+        <div class="font-semibold truncate"><?php echo e($p['name']); ?></div>
+        <div class="text-sm text-muted truncate"><?php echo e($p['preview'] ?? $p['status_label'] ?? $p['username'] ?? __('Start a conversation')); ?></div>
+        <?php if(\Livewire\Mechanisms\ExtendBlade\ExtendBlade::isRenderingLivewireComponent()): ?><!--[if BLOCK]><![endif]--><?php endif; ?><?php if(!empty($p['call_status'])): ?><div class="text-xs text-brand"><?php echo e($p['call_status'] === 'ringing' ? __('Ringing…') : __('Call in progress')); ?></div><?php endif; ?><?php if(\Livewire\Mechanisms\ExtendBlade\ExtendBlade::isRenderingLivewireComponent()): ?><!--[if ENDBLOCK]><![endif]--><?php endif; ?>
+    </div>
+    <?php if(\Livewire\Mechanisms\ExtendBlade\ExtendBlade::isRenderingLivewireComponent()): ?><!--[if BLOCK]><![endif]--><?php endif; ?><?php if(($p['unread'] ?? 0) > 0): ?><span class="rounded-full bg-brand text-white text-xs px-2 py-1" aria-label="<?php echo e(__('Unread messages')); ?>"><?php echo e($p['unread']); ?></span><?php endif; ?><?php if(\Livewire\Mechanisms\ExtendBlade\ExtendBlade::isRenderingLivewireComponent()): ?><!--[if ENDBLOCK]><![endif]--><?php endif; ?>
+</a>
+<?php /**PATH /home/dahimail.com/public_html/resources/views/livewire/friends/chat-row.blade.php ENDPATH**/ ?>
