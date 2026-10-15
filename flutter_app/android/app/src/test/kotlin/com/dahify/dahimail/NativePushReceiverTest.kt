@@ -479,8 +479,8 @@ class NativePushReceiverTest {
             "body" to "Hello there", "category_label" to "Chat", "reply_kind" to "friend", "reply_id" to "2", "recipient_user_id" to "1", "message_id" to "42")
         assertTrue(NativePushReceiver.showAlert(context, data))
         val alert = manager.activeNotifications.single().notification
-        assertEquals(R.drawable.ic_notify_chat, alert.smallIcon.resId)
-        assertNotNull(alert.getLargeIcon())
+        assertEquals(R.drawable.ic_stat_notify, alert.smallIcon.resId)
+        assertNull(alert.getLargeIcon()) // Sender photo is in our trailing column, not duplicated by the OS.
         assertEquals("Chat", alert.extras.getCharSequence(Notification.EXTRA_SUB_TEXT).toString())
         assertEquals("Alice Example", alert.extras.getCharSequence(Notification.EXTRA_TITLE).toString())
         assertEquals("Hello there", alert.extras.getCharSequence(Notification.EXTRA_TEXT).toString())
@@ -489,9 +489,42 @@ class NativePushReceiverTest {
         assertEquals("notification_reply", shadowOf(reply.actionIntent).savedIntent.getStringExtra("actionId"))
         assertEquals("com.dexterous.flutterlocalnotifications.ActionBroadcastReceiver", shadowOf(reply.actionIntent).savedIntent.component?.className)
         assertTrue(alert.actions.any { it.title == "View" })
-        val read = alert.actions.single { it.title == "Mark as read" }
-        assertEquals("notification_read", shadowOf(read.actionIntent).savedIntent.getStringExtra("actionId"))
+        assertEquals(listOf("View", "Reply"), alert.actions.map { it.title.toString() })
         assertEquals(NotificationCompat.CATEGORY_MESSAGE, alert.category)
+    }
+
+    @Test fun customLayoutPinsBrandBadgeAndSenderBesideRelativeTimeAndAvatar() {
+        val posted = System.currentTimeMillis() - 120000
+        val data = mapOf("notification_id" to "mail-layout", "type" to "email_received", "title" to "New email",
+            "sender_name" to "Alice Example", "body" to "Subject and full preview", "sent_at" to "${posted / 1000}",
+            "reply_kind" to "conversation", "reply_id" to "7", "recipient_user_id" to "1")
+        assertTrue(NativePushReceiver.showAlert(context, data))
+        val alert = manager.activeNotifications.single().notification
+        assertNotNull(alert.contentView)
+        assertNotNull(alert.bigContentView)
+        assertNotNull(alert.headsUpContentView)
+        val content = alert.headsUpContentView.apply(context, null)
+        assertEquals("Alice Example", content.findViewById<TextView>(R.id.notification_sender).text)
+        assertEquals("Subject and full preview", content.findViewById<TextView>(R.id.notification_body).text)
+        assertEquals("2m ago", content.findViewById<TextView>(R.id.notification_time).text)
+        assertEquals(2, content.findViewById<TextView>(R.id.notification_body).maxLines)
+        val brand = content.findViewById<ImageView>(R.id.notification_brand)
+        val badge = content.findViewById<ImageView>(R.id.notification_type_icon)
+        assertSame(brand.parent, badge.parent)
+        assertNotNull(content.findViewById<ImageView>(R.id.notification_avatar).drawable)
+        assertEquals(listOf("View", "Reply"), alert.actions.map { it.title.toString() })
+        val view = alert.actions.single { it.title == "View" }
+        val payload = org.json.JSONObject(shadowOf(view.actionIntent).savedIntent.getStringExtra("payload")!!)
+        assertEquals("view", payload.getString("notification_action"))
+    }
+
+    @Test fun notificationAgesHandleIsoEpochAndClockSkew() {
+        val now = java.time.Instant.parse("2026-10-15T12:00:00Z").toEpochMilli()
+        assertEquals("2m ago", NativePushReceiver.relativeTime(NativePushReceiver.notificationTime(mapOf("created_at_iso" to "2026-10-15T11:58:00Z"), now), now))
+        assertEquals("1h ago", NativePushReceiver.relativeTime(now - 3600000, now))
+        assertEquals("Just now", NativePushReceiver.relativeTime(now + 60000, now))
+        assertEquals(now, NativePushReceiver.notificationTime(mapOf("sent_at" to "invalid"), now))
+        assertEquals(R.drawable.ic_notify_friend, NativePushReceiver.notificationIcon(mapOf("type" to "friend_request")))
     }
 
     @Test fun disabledMessagesSuppressAlertsAndMissedCallsHaveNoReply() {
@@ -549,14 +582,17 @@ class NativePushReceiverTest {
         assertEquals(4, NativePushReceiver.diagnostics(context)["channel_importance"])
     }
 
-    @Test fun bannerUsesStandardExpandableLayoutWithSenderCategoryAndAvatar() {
+    @Test fun bannerUsesCustomExpandableLayoutWithSenderCategoryAndAvatar() {
         NativePushReceiver.showAlert(context, mapOf("notification_id" to "friend-1", "type" to "friend_request",
             "title" to "New request", "sender_name" to "Alice Example", "body" to "Open Friends"))
         val notification = manager.activeNotifications.single().notification
         assertEquals("Friend request", notification.extras.getCharSequence(Notification.EXTRA_SUB_TEXT).toString())
         assertEquals("Alice Example", notification.extras.getCharSequence(Notification.EXTRA_TITLE).toString())
-        assertEquals("Sent you a friend request", notification.extras.getCharSequence(Notification.EXTRA_BIG_TEXT).toString())
-        assertNotNull(notification.getLargeIcon())
+        assertEquals("Sent you a friend request", notification.extras.getCharSequence(Notification.EXTRA_TEXT).toString())
+        val expanded = notification.bigContentView.apply(context, null)
+        assertEquals("Sent you a friend request", expanded.findViewById<TextView>(R.id.notification_body).text)
+        assertNotNull(expanded.findViewById<ImageView>(R.id.notification_avatar).drawable)
+        assertNull(notification.getLargeIcon())
         assertTrue(notification.`when` > 0)
         assertEquals(listOf("View"), notification.actions.map { it.title })
     }

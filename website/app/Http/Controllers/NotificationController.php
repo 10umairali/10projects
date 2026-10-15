@@ -50,6 +50,7 @@ class NotificationController extends Controller
                     'sender_avatar' => $data['sender_avatar'] ?? '',
                     'read' => $n->read_at !== null,
                     'created_at' => $n->created_at?->diffForHumans(),
+                    'created_at_iso' => $n->created_at?->toIso8601String(),
                 ];
             });
 

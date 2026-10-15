@@ -49,7 +49,7 @@ class EmailSyncService
             };
 
             $account->update([
-                'last_synced_at' => $syncStartedAt,
+                ...($account->provider === 'gmail' ? [] : ['last_synced_at' => $syncStartedAt]),
                 'status' => 'connected',
                 'error_message' => null,
             ]);
@@ -111,13 +111,8 @@ class EmailSyncService
      */
     protected function syncGmailBatch(EmailAccount $account, int $limit): array
     {
-        // No cross-process lock here: the HTTP AJAX path and the queue worker
-        // should run in parallel so the inbox fills quickly. Race protection
-        // comes from the message_id_header unique constraint — if both paths
-        // happen to fetch the same page, one save wins and the other gets a
-        // UniqueConstraintViolationException (caught + ignored downstream).
-        // The queue-side ShouldBeUnique still prevents duplicate queue jobs.
-        return $this->syncGmailBatchLocked($account, $limit);
+        return Cache::lock("email-import:{$account->id}", 180)
+            ->get(fn () => $this->syncGmailBatchLocked($account, $limit)) ?: [0, false];
     }
 
     protected function syncGmailBatchLocked(EmailAccount $account, int $limit): array
@@ -125,15 +120,7 @@ class EmailSyncService
         $syncStartedAt = now();
         $account = $this->refreshGmailTokenLocked($account, 10);
 
-        $client = new GoogleClient();
-        $client->setClientId(config('services.google.client_id'));
-        $client->setClientSecret(config('services.google.client_secret'));
-        $client->setAccessToken([
-            'access_token' => $account->oauth_token,
-            'refresh_token' => $account->oauth_refresh_token,
-            'expires_in' => 3600,
-        ]);
-        $client->setHttpClient(new \GuzzleHttp\Client(['timeout' => 15, 'connect_timeout' => 5]));
+        $client = $this->gmailClient($account);
 
         $gmail = new Gmail($client);
         $newCount = 0;
@@ -142,6 +129,8 @@ class EmailSyncService
         $folders = $this->normalizeSyncFolders($account->sync_folders ?? ['INBOX']);
         $inboxState = $folders['INBOX'] ?? ['backfill_done' => false];
         $isBackfilling = ! ($inboxState['backfill_done'] ?? false);
+        $windowStarted = (int) ($inboxState[$isBackfilling ? 'backfill_started_at' : 'incremental_started_at'] ?? $syncStartedAt->timestamp);
+        $after = $inboxState['incremental_after'] ?? $account->last_synced_at?->copy()->subMinute()->timestamp;
 
         $params = [
             'maxResults' => max(10, min($limit, 500)), // Gmail max is 500
@@ -154,18 +143,14 @@ class EmailSyncService
                 $params['pageToken'] = $inboxState['backfill_page_token'];
             }
         } else {
-            // Incremental: only mail newer than last successful sync
-            if ($account->last_synced_at) {
-                $params['q'] = "after:{$account->last_synced_at->timestamp}";
+            // Keep the same query and cursor until every incremental page drains.
+            if ($after !== null) $params['q'] = "after:{$after}";
+            if (!empty($inboxState['incremental_page_token'])) {
+                $params['pageToken'] = $inboxState['incremental_page_token'];
             }
         }
 
-        try {
-            $messageList = $gmail->users_messages->listUsersMessages('me', $params);
-        } catch (\Throwable $e) {
-            Log::warning("EmailSync: Gmail batch list failed: " . Str::limit($e->getMessage(), 100));
-            return [0, false];
-        }
+        $messageList = $gmail->users_messages->listUsersMessages('me', $params);
 
         $messages = $messageList->getMessages() ?? [];
         $nextPageToken = $messageList->getNextPageToken();
@@ -174,47 +159,55 @@ class EmailSyncService
         $pageIds = array_map(fn ($m) => $m->getId(), $messages);
         $fullMessages = $this->gmailBatchGet($client, $gmail, $pageIds);
 
+        $pageCompleted = true;
         foreach ($pageIds as $id) {
-            if (! isset($fullMessages[$id])) continue;
+            if (! isset($fullMessages[$id])) { $pageCompleted = false; continue; }
             try {
                 if ($this->processGmailMessage($fullMessages[$id], $account)) {
                     $newCount++;
                 }
             } catch (\Throwable $e) {
-                continue;
+                $pageCompleted = false;
+                Log::warning('EmailSync: Gmail message will be retried', ['account_id' => $account->id, 'provider_id' => $id]);
             }
         }
 
-        // Checkpoint — persist cursor / completion without clobbering the
-        // incremental anchor. last_synced_at must NOT be advanced mid-backfill
-        // or we lose the historical tail.
-        if ($isBackfilling) {
+        // Never skip a failed message, a remaining page, or arrivals during sync.
+        $state = $inboxState;
+        $state[$isBackfilling ? 'backfill_started_at' : 'incremental_started_at'] = $windowStarted;
+        if (!$isBackfilling && $after !== null) $state['incremental_after'] = $after;
+        if ($pageCompleted) {
             if ($nextPageToken) {
-                $folders['INBOX']['backfill_page_token'] = $nextPageToken;
-                $folders['INBOX']['backfill_done'] = false;
+                $state[$isBackfilling ? 'backfill_page_token' : 'incremental_page_token'] = $nextPageToken;
             } else {
-                // Backfill finished — flip the flag and anchor incremental to now
-                $folders['INBOX']['backfill_done'] = true;
-                unset($folders['INBOX']['backfill_page_token']);
-                $account->last_synced_at = now();
+                $state['backfill_done'] = true;
+                unset($state['backfill_page_token'], $state['backfill_started_at'],
+                    $state['incremental_page_token'], $state['incremental_started_at'], $state['incremental_after']);
+                $account->last_synced_at = \Carbon\Carbon::createFromTimestampUTC($windowStarted);
             }
-            $account->sync_folders = $folders;
-            $account->status = 'connected';
-            $account->error_message = null;
-            $account->save();
-        } else {
-            // Pure incremental — safe to advance the anchor
-            $account->update([
-                'last_synced_at' => $syncStartedAt,
-                'status' => 'connected',
-                'error_message' => null,
-            ]);
         }
+        $folders['INBOX'] = $state;
+        $account->sync_folders = $folders;
+        $account->status = 'connected';
+        $account->error_message = null;
+        $account->save();
 
-        // has_more is true while there are more pages OR we're still backfilling
-        $hasMore = $nextPageToken !== null || ($isBackfilling && ! ($folders['INBOX']['backfill_done'] ?? false));
+        return [$newCount, !$pageCompleted || $nextPageToken !== null];
+    }
 
-        return [$newCount, $hasMore];
+    protected function gmailClient(EmailAccount $account): GoogleClient
+    {
+        $client = new GoogleClient();
+        $client->setClientId(config('services.google.client_id'));
+        $client->setClientSecret(config('services.google.client_secret'));
+        $client->setAccessToken([
+            'access_token' => $account->oauth_token,
+            'refresh_token' => $account->oauth_refresh_token,
+            'expires_in' => 3600,
+        ]);
+        $client->setHttpClient(new \GuzzleHttp\Client(['timeout' => 15, 'connect_timeout' => 5]));
+
+        return $client;
     }
 
     /**
@@ -241,7 +234,7 @@ class EmailSyncService
                 'access_token' => $locked->oauth_token,
                 'refresh_token' => $locked->oauth_refresh_token,
                 'expires_in' => $locked->oauth_token_expires_at
-                    ? max(0, $locked->oauth_token_expires_at->diffInSeconds(now(), false))
+                    ? max(0, now()->diffInSeconds($locked->oauth_token_expires_at, false))
                     : 3600,
             ]);
 
@@ -264,8 +257,11 @@ class EmailSyncService
      */
     protected function syncImapBatch(EmailAccount $account, int $limit): array
     {
-        // IMAP already has time limits, run full sync
-        $count = $this->syncImap($account);
+        // The mobile request must not wait for the 35-second body backfill.
+        // Header import makes the new rows visible; body endpoints load on demand.
+        $started = now();
+        $count = $this->syncImapMailbox($account, true);
+        $account->update(['last_synced_at' => $started, 'status' => 'connected', 'error_message' => null]);
         return [$count, false];
     }
 
@@ -289,6 +285,11 @@ class EmailSyncService
      */
     protected function syncImap(EmailAccount $account): int
     {
+        return $this->syncImapMailbox($account);
+    }
+
+    protected function syncImapMailbox(EmailAccount $account, bool $foreground = false): int
+    {
         // Strip spaces from App Passwords (Gmail generates them with spaces for readability)
         $password = str_replace(' ', '', $account->imap_password ?? '');
 
@@ -309,7 +310,7 @@ class EmailSyncService
         $startTime = microtime(true);
         // Keep total runtime under the worker's max-time=45 window with
         // headroom so the worker never interrupts mid-save.
-        $maxHeaderSeconds = 20; // Phase 1: headers only
+        $maxHeaderSeconds = $foreground ? 8 : 20; // Keep HTTP refresh below the client timeout.
         $maxTotalSeconds = 35;  // Phase 2: bodies use remaining time
 
         foreach ($syncFolders as $folderName => $folderMeta) {
@@ -317,8 +318,8 @@ class EmailSyncService
 
             Log::info("EmailSync: Connecting to {$mailbox} for {$account->email}");
 
-            @imap_timeout(IMAP_OPENTIMEOUT, 15);
-            @imap_timeout(IMAP_READTIMEOUT, 30);
+            @imap_timeout(IMAP_OPENTIMEOUT, $foreground ? 5 : 15);
+            @imap_timeout(IMAP_READTIMEOUT, $foreground ? 8 : 30);
             @imap_timeout(IMAP_WRITETIMEOUT, 10);
 
             $mbox = @imap_open($mailbox, $account->imap_username, $password, 0, 1);
@@ -413,7 +414,7 @@ class EmailSyncService
 
                 // ── Phase 2: Fetch bodies — guaranteed 20 seconds minimum ──
                 $bodyCount = 0;
-                while ((microtime(true) - $startTime) < $maxTotalSeconds) {
+                while (!$foreground && (microtime(true) - $startTime) < $maxTotalSeconds) {
                     // Check IMAP connection is still alive before each batch
                     if (!@imap_ping($mbox)) {
                         Log::warning("EmailSync: IMAP connection dropped during body fetch, reconnecting");
@@ -959,169 +960,15 @@ class EmailSyncService
      */
     protected function syncGmail(EmailAccount $account): int
     {
-        // ShouldBeUnique on the job prevents duplicate queue jobs. We don't
-        // add a cross-process lock here because the inbox AJAX loop should be
-        // free to run in parallel — the message_id_header unique constraint
-        // handles any page-overlap dedup. Serializing HTTP + queue on a single
-        // lock was causing the browser loop to idle for 40+ seconds while the
-        // worker held it.
-        return $this->syncGmailLocked($account);
-    }
-
-    protected function syncGmailLocked(EmailAccount $account): int
-    {
-        // Acquire a row-level lock on the account to prevent concurrent sync jobs
-        // from both refreshing the same OAuth token simultaneously, which could
-        // cause one job to use a revoked token.
-        $account = $this->refreshGmailTokenLocked($account, 15);
-
-        $client = new GoogleClient();
-        $client->setClientId(config('services.google.client_id'));
-        $client->setClientSecret(config('services.google.client_secret'));
-        $client->setAccessToken([
-            'access_token' => $account->oauth_token,
-            'refresh_token' => $account->oauth_refresh_token,
-            'expires_in' => 3600,
-        ]);
-        // Set HTTP timeout so API calls don't hang forever on slow servers
-        $client->setHttpClient(new \GuzzleHttp\Client([
-            'timeout' => 30,
-            'connect_timeout' => 10,
-        ]));
-
-        $gmail = new Gmail($client);
-        $newCount = 0;
-        $startTime = microtime(true);
-
-        // Keep each run tight so the queue worker can cycle to other jobs
-        // frequently. The backfill cursor means bailing early is cheap —
-        // the next tick resumes from the saved page token. Stay ~10s under
-        // the worker's own max-time so the worker never interrupts mid-save.
-        $maxSeconds = 35;
-
-        // Determine backfill state
-        $folders = $this->normalizeSyncFolders($account->sync_folders ?? ['INBOX']);
-        $inboxState = $folders['INBOX'] ?? ['backfill_done' => false];
-        $isBackfilling = ! ($inboxState['backfill_done'] ?? false);
-
-        Log::info("EmailSync: Gmail sync starting for {$account->email}", [
-            'mode' => $isBackfilling ? 'backfill' : 'incremental',
-            'last_synced' => $account->last_synced_at,
-        ]);
-
-        // Incremental filter — only mail newer than last successful full sync
-        $query = '';
-        if (! $isBackfilling && $account->last_synced_at) {
-            $query = "after:{$account->last_synced_at->timestamp}";
-        }
-
-        // Resume from saved token during backfill
-        $pageToken = $isBackfilling ? ($inboxState['backfill_page_token'] ?? null) : null;
-        $stopped = false;
-
-        do {
-            // Time guard — stop before job timeout. We'll resume from $pageToken next run.
-            if ((microtime(true) - $startTime) > $maxSeconds) {
-                Log::info("EmailSync: Gmail time limit reached after {$newCount} messages, will continue next run");
-                $stopped = true;
-                break;
-            }
-
-            $params = [
-                // With the batch API the per-page cost is dominated by one
-                // list call + N×100-message batch gets, each batch ~1-3s. A
-                // page of 250 completes in roughly 5-8s so we fit 4-6 pages
-                // per 45s run → thousands of messages per cron minute.
-                'maxResults' => 250,
-                'labelIds' => ['INBOX'],
-            ];
-            if ($query) {
-                $params['q'] = $query;
-            }
-            if ($pageToken) {
-                $params['pageToken'] = $pageToken;
-            }
-
-            try {
-                $messageList = $gmail->users_messages->listUsersMessages('me', $params);
-            } catch (\Google\Service\Exception $e) {
-                if (in_array($e->getCode(), [429, 500, 502, 503])) {
-                    Log::warning("EmailSync: Gmail list API {$e->getCode()}, stopping for now");
-                    $stopped = true;
-                    break;
-                }
-                throw $e;
-            }
-
-            // Collect all message IDs on this page, then fetch them in a single
-            // batch HTTP call (up to 100 messages per round-trip). This is the
-            // core speedup — what used to take 50 × ~500ms sequential now takes
-            // ~1-2 seconds total per page.
-            $pageIds = [];
-            foreach ($messageList->getMessages() ?? [] as $messageMeta) {
-                $pageIds[] = $messageMeta->getId();
-            }
-
-            $pageCompleted = true;
-            if (! empty($pageIds)) {
-                // Time guard before the batch fetch
-                if ((microtime(true) - $startTime) > $maxSeconds) {
-                    $stopped = true;
-                    $pageCompleted = false;
-                } else {
-                    $fullMessages = $this->gmailBatchGet($client, $gmail, $pageIds);
-
-                    foreach ($pageIds as $id) {
-                        if (! isset($fullMessages[$id])) continue;
-                        try {
-                            if ($this->processGmailMessage($fullMessages[$id], $account)) {
-                                $newCount++;
-                            }
-                        } catch (\Throwable $e) {
-                            Log::error("EmailSync: Gmail msg {$id}: " . Str::limit($e->getMessage(), 100));
-                        }
-                    }
-                }
-            }
-
-            $nextPageToken = $messageList->getNextPageToken();
-
-            // Only advance the saved cursor if we fully processed the current page.
-            // If we bailed mid-page, leave the cursor alone — next run will re-list
-            // this page and dedup (message_id_header unique check) will skip the
-            // messages we already stored, then continue with the unprocessed tail.
-            if ($isBackfilling && $pageCompleted && $nextPageToken) {
-                $folders['INBOX']['backfill_page_token'] = $nextPageToken;
-                $folders['INBOX']['backfill_done'] = false;
-                $account->sync_folders = $folders;
-                $account->save();
-            }
-
-            $pageToken = $nextPageToken;
-
-            if ($stopped) break;
-        } while ($pageToken);
-
-        // Finalization — only mark the backfill done if the pagination fully
-        // drained (no more nextPageToken AND we didn't bail on the time cap).
-        if ($isBackfilling) {
-            if (! $stopped && ! $pageToken) {
-                $folders['INBOX']['backfill_done'] = true;
-                unset($folders['INBOX']['backfill_page_token']);
-                $account->sync_folders = $folders;
-                $account->last_synced_at = now();
-                $account->save();
-                Log::info("EmailSync: Gmail BACKFILL COMPLETE for {$account->email}: {$newCount} new this run");
-            } else {
-                Log::info("EmailSync: Gmail backfill continuing for {$account->email}: {$newCount} new this run, more pending");
-            }
-        } else {
-            // Pure incremental — safe to advance the anchor
-            $account->update(['last_synced_at' => now()]);
-            Log::info("EmailSync: Gmail incremental done for {$account->email}: {$newCount} new");
-        }
-
-        return $newCount;
+        return Cache::lock("email-import:{$account->id}", 180)->get(function () use ($account) {
+            $started = microtime(true);
+            $total = 0;
+            do {
+                [$count, $more] = $this->syncGmailBatchLocked($account, 100);
+                $total += $count;
+            } while ($more && microtime(true) - $started < 35);
+            return $total;
+        }) ?: 0;
     }
 
     /**

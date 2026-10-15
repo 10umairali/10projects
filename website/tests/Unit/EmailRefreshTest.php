@@ -39,3 +39,13 @@ test('email mute is private and rejects a mixed unauthorized selection atomicall
     $controller->bulk(Request::create('/', 'POST', ['ids'=>[1], 'action'=>'unmute']));
     expect(DB::table('email_notification_mutes')->count())->toBe(0);
 });
+
+test('foreground sync reports provider failure instead of a successful empty refresh', function () {
+    DB::statement('CREATE TABLE email_accounts (id INTEGER PRIMARY KEY, workspace_id INTEGER, provider TEXT, status TEXT, deleted_at TEXT)');
+    DB::table('email_accounts')->insert(['id' => 1, 'workspace_id' => 7, 'provider' => 'imap', 'status' => 'connected']);
+    $this->mock(EmailSyncService::class, function ($mock) {
+        $mock->shouldReceive('syncBatch')->once()->andThrow(new RuntimeException('Synthetic provider failure'));
+    });
+    $result = (new InboxApiController)->syncNow(Request::create('/', 'POST'))->getData(true);
+    expect($result['failed_accounts'])->toBe(1)->and($result['synced'])->toBe(0);
+});

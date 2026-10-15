@@ -12,6 +12,9 @@ import android.graphics.Color
 import android.graphics.Canvas
 import android.graphics.Paint
 import android.graphics.Typeface
+import android.graphics.BitmapShader
+import android.graphics.Shader
+import android.graphics.Matrix
 import android.media.AudioAttributes
 import android.net.Uri
 import android.os.Build
@@ -398,29 +401,30 @@ open class NativePushReceiver : FlutterFirebaseMessagingReceiver() {
             }
             val sender = data["sender_name"].orEmpty().ifBlank { data["title"].orEmpty() }
             val builder = NotificationCompat.Builder(context, channelId)
-                .setLargeIcon(avatarPlaceholder(sender))
-                .setSmallIcon(notificationIcon(data)).setSubText(label)
+                .setSmallIcon(R.drawable.ic_stat_notify).setSubText(label)
                 .setContentTitle(sender).setContentText(body)
-                .setStyle(NotificationCompat.BigTextStyle().bigText(body).setBigContentTitle(sender))
                 .setPriority(NotificationCompat.PRIORITY_HIGH).setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
                 .setAutoCancel(true).setContentIntent(view).setOnlyAlertOnce(true)
                 .setDefaults(NotificationCompat.DEFAULT_LIGHTS or (if (vibrate) NotificationCompat.DEFAULT_VIBRATE else 0) or
                     (if (sound == "default") NotificationCompat.DEFAULT_SOUND else 0))
                 .setCategory(if (data["reply_kind"] != null) NotificationCompat.CATEGORY_MESSAGE else NotificationCompat.CATEGORY_EVENT)
-            if (type == "chat") {
-                val person = Person.Builder().setName(sender).setKey(data["sender_id"].orEmpty())
-                    .setIcon(IconCompat.createWithBitmap(avatarPlaceholder(sender))).build()
-                builder.setStyle(NotificationCompat.MessagingStyle(Person.Builder().setName("You").build())
-                    .addMessage(body, System.currentTimeMillis(), person))
-            }
             builder.addAction(0, "View", launch(context, id, JSONObject(data + ("notification_action" to "view")).toString(), "notification_view"))
             val replyable = type in listOf("chat", "email_received", "new_email", "contact_reply", "message", "new_conversation") &&
                 data["reply_kind"] in listOf("friend", "conversation") && (data["reply_id"]?.toIntOrNull() ?: 0) > 0
             if (replyable) builder.addAction(NotificationCompat.Action.Builder(0, "Reply", messageAction(context, id, payload, "notification_reply", true))
                 .addRemoteInput(androidx.core.app.RemoteInput.Builder("FlutterLocalNotificationsPluginInputResult").setLabel("Reply").build())
                 .setAllowGeneratedReplies(true).build())
-            if (type == "chat" && (data["message_id"]?.toIntOrNull() ?: 0) > 0)
-                builder.addAction(0, "Mark as read", messageAction(context, id, payload, "notification_read", false))
+            val postedAt = notificationTime(data)
+            val compactView = messageView(context, label, sender, body, false, data, postedAt)
+            val expandedView = messageView(context, label, sender, body, true, data, postedAt)
+            val headsUpView = messageView(context, label, sender, body, true, data, postedAt).apply {
+                setInt(R.id.notification_body, "setMaxLines", 2)
+            }
+            builder.setStyle(NotificationCompat.DecoratedCustomViewStyle())
+                .setCustomContentView(compactView)
+                .setCustomBigContentView(expandedView)
+                .setCustomHeadsUpContentView(headsUpView)
+                .setWhen(postedAt).setShowWhen(false)
             val manager = context.getSystemService(NotificationManager::class.java)
             wakeDisplay(context, "notification")
             manager.notify(id, builder.build())
@@ -429,23 +433,57 @@ open class NativePushReceiver : FlutterFirebaseMessagingReceiver() {
             val avatar = data["sender_avatar"].orEmpty()
             if (avatar.startsWith("https://")) images.execute {
                 val bitmap = fetchAvatar(avatar) ?: return@execute
-                if (manager.activeNotifications.any { it.id == id && it.notification.extras.getCharSequence(android.app.Notification.EXTRA_TEXT)?.toString() == body }) {
-                    manager.notify(id, builder.setLargeIcon(bitmap).build())
+                if (manager.activeNotifications.any { it.id == id && it.notification.`when` == postedAt && it.notification.extras.getCharSequence(android.app.Notification.EXTRA_TEXT)?.toString() == body }) {
+                    val circle = circularAvatar(bitmap)
+                    compactView.setImageViewBitmap(R.id.notification_avatar, circle)
+                    expandedView.setImageViewBitmap(R.id.notification_avatar, circle)
+                    headsUpView.setImageViewBitmap(R.id.notification_avatar, circle)
+                    manager.notify(id, builder.build())
                 }
             }
             return true
         }
 
-        private fun messageView(context: Context, label: String, sender: String, body: String, expanded: Boolean, data: Map<String, String>): RemoteViews =
-            RemoteViews(context.packageName, R.layout.notification_message).apply {
-                setTextViewText(R.id.notification_time, android.text.format.DateFormat.getTimeFormat(context).format(java.util.Date()))
+        private fun messageView(context: Context, label: String, sender: String, body: String, expanded: Boolean, data: Map<String, String>, postedAt: Long): RemoteViews =
+            RemoteViews(context.packageName, if (expanded) R.layout.notification_message else R.layout.notification_message_compact).apply {
+                setTextViewText(R.id.notification_time, relativeTime(postedAt))
                 setImageViewResource(R.id.notification_type_icon, notificationIcon(data))
-                setTextViewText(R.id.notification_category, label)
+                setContentDescription(R.id.notification_type_icon, label)
                 setTextViewText(R.id.notification_sender, sender)
                 setTextViewText(R.id.notification_body, body)
-                setInt(R.id.notification_body, "setMaxLines", if (expanded) 5 else 1)
+                setInt(R.id.notification_body, "setMaxLines", if (expanded) 8 else 1)
                 setImageViewBitmap(R.id.notification_avatar, avatarPlaceholder(sender))
             }
+
+        internal fun notificationTime(data: Map<String, String>, now: Long = System.currentTimeMillis()): Long {
+            val raw = data["created_at_iso"] ?: data["created_at"] ?: data["sent_at"] ?: return now
+            return try {
+                val epoch = raw.toLongOrNull()
+                val time = if (epoch != null) {
+                    if (epoch < 100000000000L) epoch * 1000 else epoch
+                } else java.time.Instant.parse(raw).toEpochMilli()
+                time.coerceAtMost(now)
+            } catch (_: Exception) { now }
+        }
+
+        internal fun relativeTime(time: Long, now: Long = System.currentTimeMillis()): String {
+            val seconds = (now - time).coerceAtLeast(0) / 1000
+            return when {
+                seconds < 60 -> "Just now"
+                seconds < 3600 -> "${seconds / 60}m ago"
+                seconds < 86400 -> "${seconds / 3600}h ago"
+                else -> "${seconds / 86400}d ago"
+            }
+        }
+
+        private fun circularAvatar(source: Bitmap): Bitmap {
+            val size = minOf(source.width, source.height)
+            val bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
+            val shader = BitmapShader(source, Shader.TileMode.CLAMP, Shader.TileMode.CLAMP)
+            shader.setLocalMatrix(Matrix().apply { setTranslate(-(source.width - size) / 2f, -(source.height - size) / 2f) })
+            Canvas(bitmap).drawCircle(size / 2f, size / 2f, size / 2f, Paint(Paint.ANTI_ALIAS_FLAG).apply { this.shader = shader })
+            return bitmap
+        }
 
         private fun notificationLabel(data: Map<String, String>): String {
             val missed = data["type"].orEmpty().contains("missed")
@@ -466,6 +504,7 @@ open class NativePushReceiver : FlutterFirebaseMessagingReceiver() {
             return when {
                 type.contains("meeting") || (type.contains("call") && (data["group"] in listOf("1", "true") || data["group_invite"] in listOf("1", "true"))) -> R.drawable.ic_notify_meeting
                 type.contains("call") -> if (video) R.drawable.ic_notify_video else R.drawable.ic_notify_call
+                type.startsWith("friend") -> R.drawable.ic_notify_friend
                 type.contains("email") || type.contains("mail_") -> R.drawable.ic_notify_email
                 type == "chat" || type.contains("message") || type.contains("conversation") || type.contains("reply") -> R.drawable.ic_notify_chat
                 else -> R.drawable.ic_stat_notify

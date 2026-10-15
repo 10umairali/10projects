@@ -58,11 +58,15 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver impleme
 
   final Map<String, DateTime> _leftAt = {};
 
-  /// Coming back to a screen you left a while ago: it stays exactly as you left it (scroll position, typed text)
+  /// Returning to Mail, or a screen left a while ago: it stays exactly as you left it (scroll position, typed text)
   /// and quietly refreshes its data in the background – nothing is rebuilt, no spinner.
   void _arrive() {
-    final t = _leftAt[_key];
-    if (t != null && DateTime.now().difference(t).inSeconds > 45) AppRefresh.bump();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final left = _leftAt[_key];
+      if (_mode == ShellMode.inbox || (left != null && DateTime.now().difference(left).inSeconds > 45)) AppRefresh.bump();
+      if (_mode == ShellMode.inbox) MailSync.sync(context.read<Session>());
+    });
   }
 
   void _remember() {
@@ -283,7 +287,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver impleme
             constraints: const BoxConstraints(maxWidth: Breakpoints.maxContent),
             child: IndexedStack(
               index: keys.indexOf(_key),
-              children: [for (final k in keys) KeyedSubtree(key: ValueKey(k), child: _pages[k]!)],
+              children: [for (final k in keys) KeyedSubtree(key: ValueKey(k), child: TickerMode(enabled: k == _key, child: _pages[k]!))],
             ),
           ),
         );

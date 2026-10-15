@@ -37,4 +37,30 @@ void main() {
       return http.Response('{"synced":1,"has_more":true}', 200);
     })); session.dispose();
   });
+  test('manual refresh during sync runs another provider pass before completing', () async {
+    final session = Session()..token = 'synthetic'..user = {'id': 1};
+    final old = Completer<http.Response>();
+    var calls = 0;
+    await http.runWithClient(() async {
+      final automatic = MailSync.sync(session);
+      final manual = MailSync.sync(session, afterCurrent: true);
+      old.complete(http.Response('{"synced":0,"has_more":false}', 200));
+      await Future.wait([automatic, manual]);
+      expect(calls, 2);
+    }, () => MockClient((_) {
+      calls++;
+      return calls == 1 ? old.future : Future.value(http.Response('{"synced":1,"has_more":false}', 200));
+    }));
+    session.dispose();
+  });
+
+  test('manual refresh surfaces provider failures while automatic sync remains retryable', () async {
+    final session = Session()..token = 'synthetic'..user = {'id': 1};
+    await http.runWithClient(() async {
+      await MailSync.sync(session);
+      await expectLater(MailSync.sync(session, afterCurrent: true), throwsA(isA<ApiException>()));
+    }, () => MockClient((_) async => http.Response('{"synced":0,"failed_accounts":1,"has_more":false}', 200)));
+    session.dispose();
+  });
+
 }

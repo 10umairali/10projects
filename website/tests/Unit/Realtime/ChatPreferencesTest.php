@@ -120,3 +120,17 @@ test('new chat picker lists accepted active friends alphabetically even without 
         ->set('search', 'zoe')->assertSee('Zoe')->assertDontSee('alice')
         ->call('closePicker')->assertSet('newChat', false)->assertSet('search', '')->assertSee('Message 2');
 });
+
+test('notification View fetches the exact older message without history read receipts or another peers data', function () {
+    $service = app(FriendChatService::class);
+    $me = User::find(1);
+    $id = (int) DB::table('friend_messages')->where('sender_id', 2)->value('id');
+    for ($i = 0; $i < 65; $i++) DB::table('friend_messages')->insert(['sender_id' => 2, 'recipient_id' => 1, 'body' => 'Newer message '.$i, 'created_at' => now()]);
+    $result = $service->messages($me, 2, null, null, false, $id);
+    expect(array_column($result['data'], 'id'))->toBe([$id]);
+    expect(DB::table('friend_messages')->where('id', $id)->value('read_at'))->toBeNull();
+    $otherId = (int) DB::table('friend_messages')->where('sender_id', 3)->value('id');
+    expect($service->messages($me, 2, null, null, false, $otherId)['data'])->toBeEmpty();
+    DB::table('friend_chat_clears')->insert(['user_id' => 1, 'other_id' => 2, 'before_id' => $id]);
+    expect($service->messages($me, 2, null, null, false, $id)['data'])->toBeEmpty();
+});

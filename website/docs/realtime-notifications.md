@@ -1,5 +1,58 @@
 # Realtime updates and device notifications
 
+## Email refresh and notification layout correction: 1.0.17+6
+
+Deploy both the Laravel files and rebuilt Flutter app from this update. It
+supersedes the earlier 1.0.16+5 ZIP.
+
+Mail reloads the saved server list immediately on every visit, even while a
+provider import is pending. Forced list reloads bypass older prefetch requests;
+late responses cannot overwrite the newer cached result. Pull-to-refresh queues
+one more provider pass if an automatic sync is already running. Socket/FCM
+invalidations and polling continue to refresh the visible list without a gesture.
+
+Gmail's HTTP and worker paths now share cursor handling. Incremental pages retain
+their original query and next-page token; failed message fetches are retried
+before the cursor advances. The sync timestamp advances only after the complete
+window drains, using its start time. Per-account locks prevent concurrent workers
+and HTTP requests from replacing each other's cursor. IMAP foreground imports
+headers without waiting for the full background body backfill; message bodies
+remain available on demand. Manual refresh reports failed accounts rather than
+silently treating a provider error as an empty successful import.
+
+Internal notifications use a contained sender avatar/category badge, full name,
+message preview and compact top-right relative time. They have no extra action
+row. Foreground Firebase messages use this in-app layout when the banner host is
+ready; startup and PiP fall back to system alerts. The same card presentation
+serves the notification list and older card API.
+
+Android system alerts have separate compact and expanded layouts. Compact
+content stays within the 48dp collapsed content budget. Expanded/headsup content
+retains app brand/category overlay at left, sender/content in the center, and
+time above the circular avatar at right. Replyable alerts offer View and inline
+Reply. View opens a styled sheet containing only the notified message, including
+older chat messages outside the newest page, with no read receipt. Events with
+no reply target offer View only. Ringing calls keep Android CallStyle and their
+Answer/Decline actions; missed calls use the common notification layout.
+
+On iOS, sender name appears above the message with the existing View/Reply
+categories. Apple controls system icon/avatar/time placement; no custom iOS
+content extension is included. Android controls its system header, available
+space, privacy settings and heads-up availability. Synthetic render previews
+verify app content, not an OEM's final notification container or real delivery.
+
+After deploying Laravel, run `php artisan optimize:clear` and
+`php artisan queue:restart`. No schema migration is added by this update; existing
+project migrations must already be applied. Keep scheduler and queue workers
+running. Rebuild the app with the existing Firebase configuration/signing keys,
+install it, and open once to register version 1.0.17+6.
+
+On a signed Android phone check Mail when already open, on repeated returns from
+Chats during an active sync, with pull-to-refresh, and after resuming. Check
+heads-up/shade/lock-screen presentation, View's exact full message, inline Reply,
+and missing/download-failed photos. Real FCM/APNs delivery and native iOS builds
+require the respective configured devices/toolchains.
+
 ## Delivery diagnostics update: 1.0.10+11
 
 “This phone is saved on the website” means registration was stored. It does not

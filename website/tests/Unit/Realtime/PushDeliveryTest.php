@@ -123,6 +123,7 @@ test('background phone alerts identify chat, video calls and meetings with label
 });
 
 test('sender identity survives database notifications through FCM while using a brand icon and action text', function () {
+    $this->freezeTime();
     $sent = [];
     Http::fake(function ($request) use (&$sent) { $sent[] = $request['message']; return Http::response(['name' => 'accepted'], 200); });
     $notification = App\Notifications\FriendNotification::request('Alice Example', 'https://example.test/avatar.jpg');
@@ -130,6 +131,8 @@ test('sender identity survives database notifications through FCM while using a 
     app(App\Listeners\SendPushForNotification::class)->handle(new Illuminate\Notifications\Events\NotificationSent($this->user, $notification, 'database'));
     expect($sent)->toHaveCount(2);
     expect($sent[0]['data']['sender_name'])->toBe('Alice Example');
+    expect($sent[0]['data']['created_at_iso'])->toBe(now()->toIso8601String());
+    expect((int) $sent[0]['data']['sent_at'])->toBe(now()->timestamp);
     expect($sent[0]['notification']['title'])->toBe('Alice Example');
     expect($sent[0]['notification']['body'])->toBe('Sent you a friend request');
     expect($sent[0]['android']['notification']['image'])->toBe('https://example.test/avatar.jpg');
@@ -145,6 +148,7 @@ test('notification API retains sender identity for mobile and browser consumers'
     $response = app(App\Http\Controllers\NotificationController::class)->index(new Illuminate\Http\Request())->getData(true);
     expect($response['unread_count'])->toBe(1);
     expect($response['notifications'][0]['sender_name'])->toBe('Alice Example');
+    expect($response['notifications'][0]['created_at_iso'])->not->toBeEmpty();
     expect($response['notifications'][0]['sender_avatar'])->toBe('https://example.test/avatar.jpg');
     expect($response['notifications'][0]['action_url'])->toBe('/meet/synthetic-room');
     expect($response['notifications'][0]['session_entry']['can_join'])->toBeFalse();
@@ -348,8 +352,7 @@ test('new iOS notifications carry the action envelope and an account-bound reply
         $payload = $message['apns']['payload'];
         $reply = json_decode($payload['payload'], true);
         return $payload['dm_local_actions'] === '1' && $payload['aps']['category'] === 'MESSAGE_REPLY'
-            && $payload['aps']['alert']['title'] === 'New email'
-            && $payload['aps']['alert']['subtitle'] === 'Alice Example'
+            && $payload['aps']['alert']['title'] === 'Alice Example'
             && $reply['recipient_user_id'] === '1' && $reply['reply_id'] === '7';
     });
 });
@@ -391,7 +394,7 @@ test('system friend notifications use category full name and concise action on b
         && $r['message']['data']['body'] === 'Accepted your friend request');
     Http::assertSent(fn ($r) => $r['message']['token'] === 'synthetic-b'
         && $r['message']['apns']['payload']['aps']['alert'] === [
-            'title' => 'Friend request accepted', 'subtitle' => 'Alice Example', 'body' => 'Accepted your friend request',
+            'title' => 'Alice Example', 'body' => 'Accepted your friend request',
         ]);
 });
 

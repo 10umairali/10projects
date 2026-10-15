@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'notification_tile.dart';
 
 /// Shared identity for the notification center and local system notifications.
 class NotificationStyle {
@@ -55,42 +56,11 @@ class NotificationCard extends StatelessWidget {
   const NotificationCard({super.key, required this.notification, required this.onTap});
 
   @override
-  Widget build(BuildContext context) {
-    final style = NotificationStyle.of(notification);
-    final unread = notification['read'] != true;
-    final scheme = Theme.of(context).colorScheme;
-    return Semantics(
-      label: unread ? 'Unread ${style.label}' : style.label,
-      button: true,
-      child: Card(
-        clipBehavior: Clip.antiAlias,
-        color: unread ? Color.alphaBlend(style.color.withValues(alpha: 0.06), scheme.surface) : scheme.surface,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16), side: BorderSide(color: unread ? style.color.withValues(alpha: 0.35) : scheme.outlineVariant)),
-        child: InkWell(
-          onTap: onTap,
-          child: Padding(
-            padding: const EdgeInsets.all(14),
-            child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Container(width: 44, height: 44, decoration: BoxDecoration(color: style.color.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(13)), child: Icon(style.icon, color: style.color, size: 23)),
-              const SizedBox(width: 12),
-              Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Row(children: [
-                  Expanded(child: Text(style.label, style: TextStyle(color: style.color, fontSize: 12, fontWeight: FontWeight.w700))),
-                  if (unread) Container(width: 8, height: 8, decoration: BoxDecoration(color: style.color, shape: BoxShape.circle)),
-                ]),
-                const SizedBox(height: 5),
-                Text('${notification['title'] ?? 'Notification'}', style: TextStyle(fontWeight: unread ? FontWeight.w700 : FontWeight.w500, fontSize: 15)),
-                if ('${notification['body'] ?? ''}'.isNotEmpty) ...[
-                  const SizedBox(height: 4),
-                  Text('${notification['body']}', style: TextStyle(color: scheme.onSurfaceVariant, height: 1.35)),
-                ],
-                const SizedBox(height: 8),
-                Text('${notification['created_at'] ?? ''}', style: TextStyle(color: scheme.onSurfaceVariant, fontSize: 11)),
-              ])),
-            ]),
-          ),
-        ),
-      ),
-    );
-  }
+  Widget build(BuildContext context) => Card(
+    clipBehavior: Clip.antiAlias,
+    elevation: 0,
+    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16),
+      side: BorderSide(color: Theme.of(context).colorScheme.outlineVariant)),
+    child: NotificationTile(notification: notification, onTap: onTap),
+  );
 }

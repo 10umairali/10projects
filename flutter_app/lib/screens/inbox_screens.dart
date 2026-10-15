@@ -2,6 +2,7 @@ import 'profile_avatar.dart';
 import '../core/conversation_header.dart';
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:provider/provider.dart';
 import '../core/api.dart';
 import '../core/mail_sync.dart';
@@ -47,7 +48,7 @@ class _ConversationsPageState extends State<ConversationsPage> with WidgetsBindi
   String _channel = 'all'; // Chats tab: channel filter (all / whatsapp / telegram / sms / slack / live_chat)
   Timer? _timer, _poller, _searchDebounce;
   List<Item> _emails = [];
-  bool _syncing = false;
+  Future<void>? _syncFuture;
   String? _headerSignature;
   String get _folder => widget.folder;
   String get _headerKey => widget.socialOnly ? 'chats' : widget.folder;
@@ -190,26 +191,51 @@ class _ConversationsPageState extends State<ConversationsPage> with WidgetsBindi
       final first = _lastUnread == -1;
       final changed = !first && (latest != _lastId || unread != _lastUnread || total != _lastTotal || revision != _lastRevision);
       _lastId = latest; _lastUnread = unread; _lastTotal = total; _lastRevision = revision;
-      if (changed && mounted) _key.currentState?.reload();
+      if ((first || changed) && mounted) _key.currentState?.reload();
     } catch (_) {}
   }
 
   /// Pulls new mail from the mail server (same call the website's inbox makes) and refreshes the list.
-  Future<void> _sync() async {
-    if (widget.socialOnly || _syncing || !mounted || WidgetsBinding.instance.lifecycleState == AppLifecycleState.paused || !TickerMode.valuesOf(context).enabled) return;
-    setState(() => _syncing = true);
+  Future<void> _sync({bool force = false}) {
+    if (widget.socialOnly || !mounted || WidgetsBinding.instance.lifecycleState == AppLifecycleState.paused || !TickerMode.valuesOf(context).enabled) return Future<void>.value();
+    if (force) return _syncAndReload(force: true);
+    return _syncFuture ??= _syncAndReload().whenComplete(() => _syncFuture = null);
+  }
+
+  Future<void> _syncAndReload({bool force = false}) async {
     try {
-      await MailSync.sync(context.read<Session>());
+      final importing = MailSync.sync(context.read<Session>(), afterCurrent: force);
+      // Mail already saved by a push/worker must appear even if IMAP is slow.
+      await _key.currentState?.reload();
+      await importing;
       // Sync may update an existing row or hydrate its body without inserting a new one.
       if (mounted) await _key.currentState?.reload();
-    } catch (_) {
-    } finally {
-      if (mounted) setState(() => _syncing = false);
+    } catch (error) {
+      if (force && mounted) toast(context, error.toString(), error: true);
     }
+  }
+
+  ValueListenable<TickerModeData>? _visibility;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final visibility = TickerMode.getValuesNotifier(context);
+    if (_visibility == visibility) return;
+    _visibility?.removeListener(_visibilityChanged);
+    _visibility = visibility..addListener(_visibilityChanged);
+  }
+
+  void _visibilityChanged() {
+    if (_visibility?.value.enabled != true) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) { _key.currentState?.reload(); _sync(); _pollNow(); _loadFriends(); }
+    });
   }
 
   @override
   void dispose() {
+    _visibility?.removeListener(_visibilityChanged);
     WidgetsBinding.instance.removeObserver(this);
     _events?.cancel();
     _timer?.cancel();
@@ -228,7 +254,7 @@ class _ConversationsPageState extends State<ConversationsPage> with WidgetsBindi
     _events = Realtime.I.events.listen((event) {
       if (!mounted || WidgetsBinding.instance.lifecycleState == AppLifecycleState.paused) return;
       final type = '${event['type'] ?? ''}';
-      if (!(type == 'reconnected' || type == 'email' || type.startsWith('email_') || type.startsWith('chat') || type.startsWith('friend') || const ['message', 'contact_reply', 'new_conversation'].contains(type))) return;
+      if (!(type == 'reconnected' || type == 'email' || type.startsWith('email_') || type.startsWith('chat') || type.startsWith('friend') || const ['new_email', 'message', 'contact_reply', 'new_conversation'].contains(type))) return;
       if (type == 'reconnected') { _sync(); }
       _pollNow();
       _key.currentState?.reload();
@@ -354,7 +380,7 @@ class _ConversationsPageState extends State<ConversationsPage> with WidgetsBindi
       filter: _filter,
       extraItems: widget.socialOnly ? _friendItems : null,
       compare: widget.socialOnly ? _byTime : null,
-      beforeRefresh: () async { await Future.wait([_sync(), _loadFriends()]); },
+      beforeRefresh: () async { await Future.wait([_sync(force: true), _loadFriends()]); },
       padding: const EdgeInsets.only(bottom: 96),
       emptyText: widget.socialOnly ? 'No chats yet.\nStart one with a friend (New chat), or connect WhatsApp, Telegram, SMS, Slack or Live chat under Workspace → Channels.' : (widget.channel != 'all' ? 'No conversations in this folder' : 'No conversations in this folder'),
       header: Column(children: [

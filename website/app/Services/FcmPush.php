@@ -202,7 +202,7 @@ class FcmPush
         try {
             $auth = $this->auth();
             if (!$auth) return false;
-            $data = $this->strings(['recipient_user_id' => $user->id] + \App\Support\PushPresentation::replyTarget($data) + $data);
+            $data = $this->strings(['recipient_user_id' => $user->id, 'sent_at' => (string) now()->timestamp] + \App\Support\PushPresentation::replyTarget($data) + $data);
             [$label, $icon] = \App\Support\PushPresentation::for($data);
             $body = mb_strcut(\App\Support\PushPresentation::body($data, $body), 0, 600, 'UTF-8');
             $data['body'] = $body;
@@ -243,7 +243,7 @@ class FcmPush
                                 'payload' => json_encode($message['data'], JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR),
                             ];
                             $message['apns']['payload']['aps']['alert'] = [
-                                'title' => $label, 'subtitle' => trim($data['sender_name'] ?? '') ?: $title, 'body' => $body,
+                                'title' => trim($data['sender_name'] ?? '') ?: $title, 'body' => $body,
                             ];
                         }
                     }

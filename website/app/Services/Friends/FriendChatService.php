@@ -242,12 +242,13 @@ class FriendChatService
      * deleted since $since (a server time returned by the previous call), and "now" (the time to send back next time).
      * @return array{data:array,changes:array,now:string}
      */
-    public function messages(User $me, int $otherId, ?int $after, ?string $since = null, bool $markRead = true): array
+    public function messages(User $me, int $otherId, ?int $after, ?string $since = null, bool $markRead = true, ?int $onlyMessage = null): array
     {
         $other = $this->viewableOrFail($me, $otherId);
         $cut = $this->cutoff($me->id, $otherId);
         $now = now();
         $q = DB::table('friend_messages')->where(fn ($w) => $this->pair($w, $me->id, $otherId))->where('id', '>', $cut);
+        if ($onlyMessage !== null) $q->where('id', $onlyMessage);
         $rows = $after ? (clone $q)->where('id', '>', $after)->orderBy('id')->limit(200)->get() : (clone $q)->orderByDesc('id')->limit(60)->get()->reverse()->values();
         $changes = collect();
         if ($after && $since) {

@@ -14,8 +14,9 @@ class FriendChatController extends Controller
     public function messages(Request $request, int $userId): JsonResponse
     {
         if (!FriendSettings::chatEnabled()) return response()->json(['message' => 'Chat is switched off.', 'data' => []], 403);
+        $validated = $request->validate(['message_id' => 'nullable|integer|min:1']);
         $after = $request->query('after') !== null ? (int) $request->query('after') : null;
-        $r = app(FriendChatService::class)->messages($request->user(), $userId, $after ?: null, $request->query('since'), !$request->is('api/*') && $request->boolean('mark_read', true));
+        $r = app(FriendChatService::class)->messages($request->user(), $userId, $after ?: null, $request->query('since'), !$request->is('api/*') && $request->boolean('mark_read', true), isset($validated['message_id']) ? (int) $validated['message_id'] : null);
         try { app(\App\Services\Friends\PresenceService::class)->touch($request->user()->id); } catch (\Throwable $e) {}
         $pr = app(\App\Services\Friends\PresenceService::class)->forViewer($request->user(), [$userId])[$userId] ?? ['online' => false, 'label' => null];
         return response()->json(['data' => $r['data'], 'changes' => $r['changes'], 'now' => $r['now'], 'presence' => $pr, 'relation' => $r['relation'] ?? null]);

@@ -55,3 +55,24 @@ test('sync watermark is the start time so mail arriving during sync is not skipp
         \Carbon\Carbon::setTestNow();
     }
 });
+
+test('foreground IMAP import uses the header path and anchors sync before the request', function () {
+    config(['database.default' => 'sqlite', 'database.connections.sqlite.database' => ':memory:', 'activitylog.enabled' => false]);
+    DB::purge('sqlite');
+    DB::statement('CREATE TABLE email_accounts (id INTEGER PRIMARY KEY, workspace_id INTEGER, provider TEXT, status TEXT, last_synced_at TEXT, error_message TEXT, deleted_at TEXT, created_at TEXT, updated_at TEXT)');
+    DB::table('email_accounts')->insert(['id' => 1, 'workspace_id' => 7, 'provider' => 'imap', 'status' => 'connected']);
+    $service = new class extends EmailSyncService {
+        protected function syncImap(EmailAccount $account): int { throw new RuntimeException('HTTP refresh must not run the full body backfill.'); }
+        protected function syncImapMailbox(EmailAccount $account, bool $foreground = false): int {
+            expect($foreground)->toBeTrue();
+            \Carbon\Carbon::setTestNow('2026-10-15 12:01:00');
+            return 2;
+        }
+    };
+    \Carbon\Carbon::setTestNow('2026-10-15 12:00:00');
+    try {
+        $account = EmailAccount::findOrFail(1);
+        expect($service->syncBatch($account, 25))->toBe([2, false]);
+        expect($account->fresh()->last_synced_at->format('H:i:s'))->toBe('12:00:00');
+    } finally { \Carbon\Carbon::setTestNow(); }
+});

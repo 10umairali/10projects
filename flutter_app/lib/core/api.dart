@@ -39,12 +39,15 @@ class Api {
   static const _timesKey = '__cache_times__';
   static final Map<String, int> _times = {};
   static Future<bool> Function()? persistenceGuard;
-  static final Map<String, Future<dynamic>> _inflight = {};
+  static final Map<String, ({Future<dynamic> response, int version})> _inflight = {};
+  static final Map<String, int> _requestVersions = {};
+  static int _requestSerial = 0;
 
   /// Drops everything in memory (used after big changes such as connecting an account).
   static void clearCache() {
     _cacheGeneration++;
     _cache.clear();
+    _requestVersions.clear();
     _snapshots.clear();
     _times.clear();
     _dirty.clear();
@@ -80,6 +83,7 @@ class Api {
     _userKey = userKey;
     final generation = ++_cacheGeneration;
     _cache.clear();
+    _requestVersions.clear();
     _snapshots.clear();
     _times.clear();
     _lastSync = null;
@@ -190,6 +194,7 @@ class Api {
     final scope = _userKey;
     _cacheGeneration++;
     _cache.clear();
+    _requestVersions.clear();
     _snapshots.clear();
     _times.clear();
     _dirty.clear();
@@ -213,6 +218,7 @@ class Api {
     final scope = _userKey;
     _cacheGeneration++;
     _cache.clear();
+    _requestVersions.clear();
     _snapshots.clear();
     _times.clear();
     _dirty.clear();
@@ -252,6 +258,7 @@ class Api {
     if (seg == 'workspaces' || seg == 'auth') {
       _cacheGeneration++;
       _cache.clear();
+    _requestVersions.clear();
       _snapshots.clear();
     _times.clear(); // switching workspace / account changes everything
       _dirty.clear();
@@ -355,7 +362,7 @@ class Api {
     return (q == null || q.isEmpty) ? uri : uri.replace(queryParameters: q);
   }
 
-  Future<dynamic> get(String path, {Map<String, String>? query}) async {
+  Future<dynamic> get(String path, {Map<String, String>? query, bool fresh = false}) async {
     final key = _ck(path, query);
     if (cacheOnly) {
       if (_cache.containsKey(key)) return _cache[key];
@@ -364,13 +371,23 @@ class Api {
     }
     final generation = _cacheGeneration, scope = cacheScope(session);
     final token = session.token;
-    final requestKey = '$scope/$generation/$key';
-    final pending = _inflight.putIfAbsent(requestKey, () => _send('GET', path, query: query));
+    final responseKey = '$scope/$generation/$key';
+    final requestKey = fresh ? '$responseKey/fresh/${++_requestSerial}' : responseKey;
+    final pending = _inflight.putIfAbsent(requestKey, () {
+      final version = ++_requestSerial;
+      _requestVersions[responseKey] = version;
+      if (_requestVersions.length > 600) _requestVersions.remove(_requestVersions.keys.first);
+      return (response: _send('GET', path, query: query), version: version);
+    });
+    final version = pending.version;
     dynamic data;
-    try { data = await pending; } finally { if (identical(_inflight[requestKey], pending)) _inflight.remove(requestKey); }
+    try { data = await pending.response; } finally { if (identical(_inflight[requestKey], pending)) _inflight.remove(requestKey); }
     if (generation != _cacheGeneration || scope != cacheScope(session) || token != session.token) {
       throw ApiException(409, 'Account or workspace changed. Refresh to continue.');
     }
+    // A slow prefetch may finish after a newer forced refresh. Return its
+    // response to its caller, but never replace the newer cached list.
+    if (_requestVersions[responseKey] != version) return data;
     if (_cache.length > 300) _cache.remove(_cache.keys.first);
     _cache[key] = data;
     if (_snapshots.length > 300) _snapshots.remove(_snapshots.keys.first);

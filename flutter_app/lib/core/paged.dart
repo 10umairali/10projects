@@ -56,6 +56,8 @@ class PagedListState extends State<PagedList> {
   String? _error;
   int _page = 1;
   int _gen = 0;
+  Future<void>? _fetchFuture, _reloadFuture;
+  bool _reloadRequested = false;
 
   @override
   void initState() {
@@ -82,14 +84,19 @@ class PagedListState extends State<PagedList> {
   /// Quiet refresh of the visible list (keeps the items on screen while the new page downloads).
   void _onTick() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted && !_fetching && TickerMode.valuesOf(context).enabled) reload();
+      if (mounted && TickerMode.valuesOf(context).enabled) reload();
     });
+    // Socket/FCM callbacks can arrive while Flutter is idle. A post-frame
+    // callback alone does not request a frame, so the invalidation would wait
+    // until the user touches the screen.
+    WidgetsBinding.instance.ensureVisualUpdate();
   }
 
   @override
   void didUpdateWidget(covariant PagedList old) {
     super.didUpdateWidget(old);
     if (old.endpoint != widget.endpoint || old.query.toString() != widget.query.toString()) {
+      _gen++; // Ignore a response for the previous filter.
       final saved = Api.peek(widget.endpoint, {...widget.query, 'page': '1'});
       _items.clear();
       if (saved != null) _items.addAll(Api.list(saved));
@@ -104,21 +111,37 @@ class PagedListState extends State<PagedList> {
     super.dispose();
   }
 
-  Future<void> reload() async {
-    if (!mounted) return;
-    setState(() {
-      _loading = _items.isEmpty && Api.peek(widget.endpoint, {...widget.query, 'page': '1'}) == null;
-      _error = null;
-      _page = 1;
-    });
-    await _fetch(reset: true);
+  Future<void> reload() {
+    if (!mounted) return Future<void>.value();
+    // Invalidation during a request must fetch again after it completes. Joining
+    // the older GET can otherwise leave newly synced mail off screen forever.
+    _reloadRequested = true;
+    return _reloadFuture ??= _drainReloads().whenComplete(() => _reloadFuture = null);
   }
 
-  Future<void> _fetch({bool reset = false}) async {
+  Future<void> _drainReloads() async {
+    while (mounted && _reloadRequested) {
+      final pending = _fetchFuture;
+      if (pending != null) await pending;
+      if (!mounted) return;
+      _reloadRequested = false;
+      setState(() {
+        _loading = _items.isEmpty && Api.peek(widget.endpoint, {...widget.query, 'page': '1'}) == null;
+        _error = null;
+        _page = 1;
+      });
+      await _fetch(reset: true);
+    }
+  }
+
+  Future<void> _fetch({bool reset = false}) =>
+      _fetchFuture = _performFetch(reset: reset).whenComplete(() => _fetchFuture = null);
+
+  Future<void> _performFetch({bool reset = false}) async {
     _fetching = true;
     final gen = ++_gen;
     try {
-      final j = await Api.of(context).get(widget.endpoint, query: {...widget.query, 'page': '$_page'});
+      final j = await Api.of(context).get(widget.endpoint, query: {...widget.query, 'page': '$_page'}, fresh: reset);
       if (!mounted || gen != _gen) return;
       var more = false;
       if (j is Map) {

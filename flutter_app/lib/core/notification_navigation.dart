@@ -116,39 +116,68 @@ class NotificationNavigation {
     if (recipient != null && recipient != api.session.userId) return;
     final target = NotificationTarget.from(data);
     if (target == null) { await open(context, {...data, 'notification_action': null}); return; }
-    final future = () async {
-      if (target.kind == 'friend') {
-        final result = await api.getNoCache('friends/${target.id}/messages', query: {'mark_read': '0'});
-        return <String, dynamic>{'messages': Api.list(result)};
-      }
-      final result = await api.getNoCache('inbox/conversations/${target.id}/messages', query: {'mark_read': '0'});
-      final messages = result is Map ? Api.list(result['messages']) : <Map<String, dynamic>>[];
-      if (messages.isEmpty) return <String, dynamic>{'messages': messages};
-      final id = int.tryParse('${data['message_id']}');
-      final message = messages.firstWhere((m) => m['id'] == id, orElse: () => messages.last);
-      final body = Api.obj(await api.getNoCache('inbox/messages/${message['id']}/body'));
-      return <String, dynamic>{'html': body['html'], 'text': body['text'] ?? message['body_text']};
-    }();
+    final future = loadContent(api, data);
     await showModalBottomSheet<void>(context: context, isScrollControlled: true, showDragHandle: true,
-      builder: (sheet) => SafeArea(child: SizedBox(height: MediaQuery.sizeOf(sheet).height * .78,
+      builder: (sheet) => SafeArea(child: SizedBox(height: MediaQuery.sizeOf(sheet).height * .7,
         child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-          Padding(padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8), child: Text(NotificationPresentation.sender(data), style: Theme.of(sheet).textTheme.titleLarge)),
+          Padding(padding: const EdgeInsets.fromLTRB(20, 0, 12, 16), child: Row(children: [
+            Avatar(NotificationPresentation.sender(data), url: NotificationPresentation.avatar(data), radius: 22),
+            const SizedBox(width: 12),
+            Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text(NotificationPresentation.sender(data), style: Theme.of(sheet).textTheme.titleMedium),
+              const SizedBox(height: 3),
+              Text('${NotificationPresentation.from(data).label} · ${NotificationPresentation.relativeTime(data)}',
+                style: Theme.of(sheet).textTheme.bodySmall),
+            ])),
+            IconButton(tooltip: 'Close', onPressed: () => Navigator.pop(sheet), icon: const Icon(Icons.close)),
+          ])),
+          const Divider(height: 1),
           Expanded(child: FutureBuilder<Map<String, dynamic>>(future: future, builder: (c, snapshot) {
-            if (snapshot.hasError) return const Center(child: Text('Could not load this message. Open the conversation to retry.'));
+            if (snapshot.hasError) return const Center(child: Padding(padding: EdgeInsets.all(24), child: Text('Could not load this message. Open the conversation to retry.')));
             if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
             final value = snapshot.data!;
             return SingleChildScrollView(padding: const EdgeInsets.all(20), child:
               '${value['html'] ?? ''}'.isNotEmpty ? HtmlWidget('${value['html']}') :
-              SelectableText(value['messages'] is List
-                ? (value['messages'] as List).map((m) => '${m['mine'] == true ? 'You' : NotificationPresentation.sender(data)}: ${m['body'] ?? m['preview'] ?? m['file']?['name'] ?? ''}').join('\n\n')
-                : '${value['text'] ?? data['body'] ?? ''}', style: const TextStyle(fontSize: 16, height: 1.5)));
+              SelectableText('${value['text'] ?? ''}', style: const TextStyle(fontSize: 15, height: 1.5)));
           })),
-          Padding(padding: const EdgeInsets.all(12), child: Wrap(spacing: 8, children: [
-            FilledButton.icon(icon: const Icon(Icons.reply), label: const Text('Reply'), onPressed: () async { Navigator.pop(sheet); await reply(context, data); }),
-            if (data['type'] == 'chat' && data['message_id'] != null) OutlinedButton(onPressed: () async { Navigator.pop(sheet); await markRead(context, data); }, child: const Text('Mark as read')),
-            TextButton(onPressed: () async { Navigator.pop(sheet); await open(context, {...data, 'notification_action': null}); }, child: const Text('Open conversation')),
+          const Divider(height: 1),
+          Padding(padding: const EdgeInsets.all(16), child: Row(children: [
+            Expanded(child: OutlinedButton(style: OutlinedButton.styleFrom(minimumSize: const Size(0, 44)),
+              onPressed: () async { Navigator.pop(sheet); await open(context, {...data, 'notification_action': null}); }, child: const Text('Open conversation'))),
+            const SizedBox(width: 12),
+            Expanded(child: FilledButton.icon(style: FilledButton.styleFrom(minimumSize: const Size(0, 44)),
+              icon: const Icon(Icons.reply, size: 18), label: const Text('Reply'),
+              onPressed: () async { Navigator.pop(sheet); await reply(context, data); })),
           ])),
         ]))));
+  }
+
+  /// Expand only the notified message; never substitute another message or history.
+  static Future<Map<String, dynamic>> loadContent(Api api, Map data) async {
+    final target = NotificationTarget.from(data);
+    final recipient = int.tryParse('${data['recipient_user_id'] ?? ''}');
+    if (!api.session.isLoggedIn || (recipient != null && recipient != api.session.userId)) {
+      throw ApiException(403, 'This notification belongs to another account.');
+    }
+    final token = api.session.token;
+    final id = int.tryParse('${data['message_id'] ?? ''}');
+    Map<String, dynamic> value = {'text': NotificationPresentation.body(data)};
+    if (target != null && id != null && id > 0) {
+      if (target.kind == 'friend') {
+        final result = await api.getNoCache('friends/${target.id}/messages',
+          query: {'mark_read': '0', 'message_id': '$id'});
+        final messages = Api.list(result).where((m) => '${m['id']}' == '$id');
+        if (messages.isNotEmpty) {
+          final message = messages.first;
+          value = {'text': message['body'] ?? message['preview'] ?? message['file']?['name'] ?? NotificationPresentation.body(data)};
+        }
+      } else {
+        final body = Api.obj(await api.getNoCache('inbox/messages/$id/body'));
+        value = {'html': body['html'], 'text': body['text'] ?? NotificationPresentation.body(data)};
+      }
+    }
+    if (token != api.session.token) throw ApiException(409, 'Account changed.');
+    return value;
   }
 
   static Future<void> reply(BuildContext context, Map data) async {

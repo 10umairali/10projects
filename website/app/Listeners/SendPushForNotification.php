@@ -39,6 +39,7 @@ class SendPushForNotification
 
         app(FcmPush::class)->sendToUser($event->notifiable, $title, $body, [
             'notification_id' => $id,
+            'created_at_iso' => ($event->response->created_at ?? null)?->toIso8601String() ?? now()->toIso8601String(),
             'message_id' => $data['message_id'] ?? '',
             'type'       => $data['type'] ?? 'notification',
             'action_url' => $data['action_url'] ?? '',

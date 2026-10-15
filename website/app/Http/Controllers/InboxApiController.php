@@ -946,6 +946,7 @@ class InboxApiController extends Controller
 
         $syncService = app(EmailSyncService::class);
         $totalSynced = 0;
+        $failedAccounts = 0;
         $hasMore = false;
 
         // 25 per call is a middle ground: low enough to stay under PHP's typical
@@ -966,6 +967,7 @@ class InboxApiController extends Controller
                     $this->fireMessageReceivedForRecent($account);
                 }
             } catch (\Throwable $e) {
+                $failedAccounts++;
                 Log::warning("InboxAPI: Batch sync failed: " . Str::limit($e->getMessage(), 100));
             }
         }
@@ -979,7 +981,7 @@ class InboxApiController extends Controller
             }
         }
 
-        return response()->json(['synced' => $totalSynced, 'has_more' => $hasMore]);
+        return response()->json(['synced' => $totalSynced, 'has_more' => $hasMore, 'failed_accounts' => $failedAccounts]);
     }
 
     /**

@@ -36,11 +36,14 @@ class CallPresentation extends StatefulWidget {
 class _CallPresentationState extends State<CallPresentation> {
   MediaQueryData? _fullMedia;
   @override
+  void dispose() { NotifyService.I.bannerHostReady = false; super.dispose(); }
+  @override
   Widget build(BuildContext context) => AnimatedBuilder(animation: Listenable.merge([RoomHost.I, CallManager.I.resumable]), builder: (context, _) {
     final h = RoomHost.I;
     final media = MediaQuery.of(context);
     final size = media.size;
     final compact = h.inPip || (h.engine != null && (size.width < 300 || size.height < 280));
+    NotifyService.I.bannerHostReady = !compact;
     if (!compact) _fullMedia = media;
     final fullMedia = compact ? (_fullMedia ?? media.copyWith(size: const Size(390, 844))) : media;
     final layout = fullMedia.size;
@@ -51,11 +54,11 @@ class _CallPresentationState extends State<CallPresentation> {
           Expanded(child: MediaQuery(data: fullMedia.copyWith(padding: OngoingSessionBar.visible ? fullMedia.padding.copyWith(top: 0) : fullMedia.padding), child: widget.child)),
         ]))))),
       if (!compact) const MiniCallOverlay(),
-      if (!compact) Positioned(top: 0, left: 8, right: 8, child: ValueListenableBuilder<Map<String, dynamic>?>(
+      if (!compact) Positioned(top: 8, left: 12, right: 12, child: ValueListenableBuilder<Map<String, dynamic>?>(
         valueListenable: NotifyService.I.banner,
         builder: (context, data, _) => data == null ? const SizedBox.shrink() : SafeArea(bottom: false, child: Dismissible(
           key: ValueKey(data), direction: DismissDirection.up, onDismissed: (_) => NotifyService.I.dismissBanner(),
-          child: Material(elevation: 8, borderRadius: BorderRadius.circular(14), color: Theme.of(context).colorScheme.surface,
+          child: Material(elevation: 6, shadowColor: Colors.black26, clipBehavior: Clip.antiAlias, borderRadius: BorderRadius.circular(18), color: Theme.of(context).colorScheme.surface,
             child: NotificationTile(notification: data, compact: true, onTap: () {
               NotifyService.I.dismissBanner(); NotifyService.I.openRemote(data);
             })),

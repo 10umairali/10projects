@@ -35,11 +35,16 @@ void main() {
     SharedPreferencesAsyncPlatform.instance = InMemorySharedPreferencesAsync.empty();
     PackageInfo.setMockInitialValues(appName: 'Dahimail', packageName: 'com.dahify.dahimail', version: '1.0.9', buildNumber: '10', buildSignature: '');
     NotifyService.I.state = AppLifecycleState.resumed;
+    NotifyService.I.bannerHostReady = true;
     final messenger = TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
     const messaging = MethodChannel('plugins.flutter.io/firebase_messaging');
     const notifications = MethodChannel('dexterous.com/flutter/local_notifications');
     const device = MethodChannel('com.dahify.dahimail/device');
     final alerts = <Map>[];
+    final banners = <Map>[];
+    void onBanner() { final value = NotifyService.I.banner.value; if (value != null) banners.add(value); }
+    NotifyService.I.banner.addListener(onBanner);
+    addTearDown(() { NotifyService.I.banner.removeListener(onBanner); NotifyService.I.dismissBanner(); });
     messenger.setMockMethodCallHandler(messaging, (call) async =>
         call.method == 'Messaging#getToken' ? {'token': 'synthetic-token'} : <String, dynamic>{});
     messenger.setMockMethodCallHandler(notifications, (call) async =>
@@ -66,13 +71,18 @@ void main() {
       for (final type in ['chat', 'email_received', 'friend_request', 'friend_accepted', 'notification']) {
         await receive(type, {'type': type, 'from_id': '42'});
       }
-      expect(alerts, hasLength(5));
+      expect(alerts, isEmpty);
+      expect(banners, hasLength(5));
       CallManager.I.openChatId = 42;
       await receive('reading', {'type': 'chat', 'from_id': '42'});
       await receive('native', {'type': 'chat', 'from_id': '43', 'dm_native_shown': '1'});
-      expect(alerts, hasLength(5));
+      expect(alerts, isEmpty);
+      expect(banners, hasLength(5));
       await receive('other-chat', {'type': 'chat', 'from_id': '43'});
-      expect(alerts, hasLength(6));
+      expect(alerts, isEmpty);
+      expect(banners, hasLength(6));
+      NotifyService.I.dismissBanner();
+      NotifyService.I.bannerHostReady = false;
       await PushService.I.unregister(api);
     }, () => MockClient((_) async => http.Response(jsonEncode({'push_configured': true, 'push_status': 'registered'}), 200)));
     debugDefaultTargetPlatformOverride = null;

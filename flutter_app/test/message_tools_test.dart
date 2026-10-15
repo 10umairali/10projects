@@ -117,17 +117,18 @@ void main() {
     })); session.dispose();
   });
 
-  testWidgets('expanded notification loads complete chat without marking it read', (tester) async {
+  testWidgets('expanded notification shows the notified message without marking it read', (tester) async {
     final session = Session()..token = 'synthetic'..user = {'id': 1}; final requests = <http.Request>[];
     await http.runWithClient(() async {
       await tester.pumpWidget(ChangeNotifierProvider.value(value: session, child: MaterialApp(home: Builder(builder: (context) => Scaffold(body: TextButton(child: const Text('Preview'), onPressed: () => NotificationNavigation.view(context, const {'type': 'chat', 'from_id': 2, 'message_id': 42, 'recipient_user_id': 1, 'sender_name': 'Alice'})))))));
       await tester.tap(find.text('Preview')); await tester.pumpAndSettle();
-      expect(find.text('Alice: Complete message body'), findsOneWidget);
+      expect(find.text('Complete message body'), findsOneWidget);
       expect(requests.every((r) => r.method == 'GET'), true);
       expect(requests.single.url.queryParameters['mark_read'], '0');
-      await tester.tap(find.text('Mark as read')); await tester.pumpAndSettle();
-      expect(requests.last.url.path, endsWith('/friends/2/read'));
-      expect(jsonDecode(requests.last.body), {'through_message_id': 42});
+      expect(requests.single.url.queryParameters['message_id'], '42');
+      expect(find.text('Mark as read'), findsNothing);
+      expect(find.text('Reply'), findsOneWidget);
+      expect(find.text('Open conversation'), findsOneWidget);
       await tester.pumpWidget(const SizedBox.shrink());
     }, () => MockClient((request) async { requests.add(request); return http.Response('{"data":[{"id":42,"body":"Complete message body","mine":false}]}', 200); }));
     session.dispose();

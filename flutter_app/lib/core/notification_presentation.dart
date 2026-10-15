@@ -56,6 +56,27 @@ class NotificationPresentation {
     return value.isEmpty ? null : value;
   }
 
+  /// Prefer a machine timestamp; accept the older API's English relative text.
+  static String relativeTime(Map data, {DateTime? now}) {
+    final raw = '${data['created_at_iso'] ?? data['created_at'] ?? data['sent_at'] ?? ''}'.trim();
+    final epoch = int.tryParse(raw);
+    final date = epoch == null ? DateTime.tryParse(raw) :
+        DateTime.fromMillisecondsSinceEpoch(epoch < 100000000000 ? epoch * 1000 : epoch, isUtc: true);
+    if (date != null) {
+      final seconds = (now ?? DateTime.now()).difference(date).inSeconds;
+      if (seconds < 60) return 'Just now';
+      if (seconds < 3600) return '${seconds ~/ 60}m ago';
+      if (seconds < 86400) return '${seconds ~/ 3600}h ago';
+      return '${seconds ~/ 86400}d ago';
+    }
+    final legacy = RegExp(r'^(\d+)\s+(second|minute|hour|day|week|month|year)s? ago$').firstMatch(raw);
+    if (legacy != null) {
+      final units = {'second': 's', 'minute': 'm', 'hour': 'h', 'day': 'd', 'week': 'w', 'month': 'mo', 'year': 'y'};
+      return '${legacy[1]}${units[legacy[2]]} ago';
+    }
+    return raw.isEmpty ? 'Just now' : raw;
+  }
+
   static bool flag(dynamic value) => value == true || value == 1 || value == '1' || value == 'true';
 
   factory NotificationPresentation.from(Map data) {
@@ -85,7 +106,7 @@ class NotificationPresentation {
       return NotificationPresentation(failed ? 'Email delivery failed' : 'Email', 'email', failed ? Icons.mark_email_unread_rounded : Icons.mail_rounded,
           failed ? const Color(0xFFDC2626) : const Color(0xFF2563EB));
     }
-    if (type == 'chat' || type.contains('message') || type.contains('conversation') || type.contains('reply')) return const NotificationPresentation('Chat', 'chat', Icons.chat_bubble_rounded, Color(0xFF15803D));
+    if (type == 'chat' || type.contains('message') || type.contains('conversation') || type.contains('reply')) return const NotificationPresentation('Chat', 'chat', Icons.chat_rounded, Color(0xFF15803D));
     if (type.startsWith('friend')) return const NotificationPresentation('Friends', 'friends', Icons.person_add_alt_1_rounded, Color(0xFFD97706));
     if (type.contains('security') || type.contains('verify')) return const NotificationPresentation('Security', 'security', Icons.shield_rounded, Color(0xFFEA580C));
     if (RegExp('billing|payment|plan|trial').hasMatch(type)) return const NotificationPresentation('Billing', 'billing', Icons.credit_card_rounded, Color(0xFF7C3AED));

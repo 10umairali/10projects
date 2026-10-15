@@ -31,8 +31,8 @@ void main() {
         'body': 'Missed video call', 'created_at': 'Today, 10:30', 'read': false,
       }, onTap: () => opened = true)]),
     ))));
-    expect(find.text('Missed video call'), findsNWidgets(2));
-    expect(find.byIcon(Icons.videocam_rounded), findsOneWidget);
+    expect(find.text('Missed video call'), findsOneWidget);
+    expect(find.byIcon(Icons.videocam_off_rounded), findsOneWidget);
     expect(find.byIcon(Icons.done_all_rounded), findsNothing);
     expect(tester.takeException(), isNull);
     await tester.tap(find.text('Alex called you'));

@@ -211,8 +211,6 @@ class NotifyService with WidgetsBindingObserver {
         icon: NotificationStyle.of(notification ?? {}).smallIcon,
         actions: notification == null ? null : [
           const AndroidNotificationAction('notification_view', 'View', showsUserInterface: true),
-          if (notification['type'] == 'chat' && notification['message_id'] != null)
-            const AndroidNotificationAction('notification_read', 'Mark as read', cancelNotification: false),
           if (NotificationTarget.from(notification) != null)
             const AndroidNotificationAction('notification_reply', 'Reply', cancelNotification: false,
               inputs: [AndroidNotificationActionInput(label: 'Reply')]),
@@ -222,9 +220,9 @@ class NotifyService with WidgetsBindingObserver {
         styleInformation: BigTextStyleInformation(displayBody),
         groupKey: '${AppConfig.urlScheme}.${presentation?.kind ?? category}',
       ),
-      iOS: DarwinNotificationDetails(presentAlert: true, presentBadge: true, presentBanner: true, presentList: true, presentSound: playSound, subtitle: notification == null ? null : displayTitle, threadIdentifier: presentation?.kind, categoryIdentifier: notification != null && NotificationTarget.from(notification) != null ? (notification['type'] == 'chat' ? 'CHAT_REPLY' : 'MESSAGE_REPLY') : 'MESSAGE_VIEW'),
+      iOS: DarwinNotificationDetails(presentAlert: true, presentBadge: true, presentBanner: true, presentList: true, presentSound: playSound, threadIdentifier: presentation?.kind, categoryIdentifier: notification != null && NotificationTarget.from(notification) != null ? (notification['type'] == 'chat' ? 'CHAT_REPLY' : 'MESSAGE_REPLY') : 'MESSAGE_VIEW'),
     );
-    await _plugin.show(id, defaultTargetPlatform == TargetPlatform.iOS ? (label ?? displayTitle) : displayTitle, displayBody, details, payload: notification == null ? category : jsonEncode(notification));
+    await _plugin.show(id, displayTitle, displayBody, details, payload: notification == null ? category : jsonEncode(notification));
   }
 
   // Avatar failure must never prevent the alert. Public HTTPS only; no session headers.
@@ -247,6 +245,7 @@ class NotifyService with WidgetsBindingObserver {
   }
 
   final banner = ValueNotifier<Map<String, dynamic>?>(null);
+  bool bannerHostReady = false;
   Timer? _bannerTimer;
 
   void dismissBanner() {
@@ -275,9 +274,12 @@ class NotifyService with WidgetsBindingObserver {
     final seen = await storage.getStringList('push_shown_ids') ?? [];
     if (seen.contains(key)) return;
     final id = key.codeUnits.fold<int>(0, (hash, c) => ((hash * 31) + c) & 0x7fffffff);
-    // Firebase foreground presentation is disabled, so every visible push must
-    // reach the system notification path even before a Scaffold is available.
-    await show(id: id, title: title, body: '${data['body'] ?? ''}', category: category, prefs: prefs, notification: data, foreground: foreground);
+    if (foreground && inForeground && bannerHostReady) {
+      // The open app uses the sender-avatar layout, with no duplicate OS banner.
+      showBanner(data);
+    } else {
+      await show(id: id, title: title, body: '${data['body'] ?? ''}', category: category, prefs: prefs, notification: data, foreground: foreground);
+    }
     if (data['type'] == 'chat' && data['message_id'] != null) {
       _shownChatMessages.add('${data['message_id']}');
       if (_shownChatMessages.length > 100) _shownChatMessages.remove(_shownChatMessages.first);

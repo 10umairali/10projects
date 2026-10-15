@@ -86,14 +86,14 @@ void main() {
     expect(shown, isEmpty);
   });
 
-  test('iOS local notification uses category then full name then message body', () async {
+  test('iOS local notification shows full name above message body', () async {
     debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
     IOSFlutterLocalNotificationsPlugin.registerWith();
     await NotifyService.I.showRemote({'type': 'email_received', 'title': 'Email', 'sender_name': 'Alice Example', 'body': 'The email preview', 'notification_id': 'ios-1'}, foreground: true);
     final args = shown.single.arguments as Map;
-    expect(args['title'], 'New email');
+    expect(args['title'], 'Alice Example');
     expect(args['body'], 'The email preview');
-    expect(args['platformSpecifics']['subtitle'], 'Alice Example');
+    expect(args['platformSpecifics']['subtitle'], isNull);
     expect(args['platformSpecifics']['categoryIdentifier'], 'MESSAGE_VIEW');
   });
 
